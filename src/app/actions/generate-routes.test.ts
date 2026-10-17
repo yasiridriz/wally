@@ -35,6 +35,13 @@ describe('destination action input', () => {
     await generateRoutes({ ...request, mode: 'loop' });
     expect(vi.mocked(generateLiveRoutes).mock.calls[0][0].destination).toBeUndefined();
   });
+  it('accepts any whole-minute duration from 5 to 180 and rejects others', async () => {
+    vi.stubEnv('GOOGLE_MAPS_API_KEY', 'test-key');
+    vi.mocked(generateLiveRoutes).mockResolvedValue([]);
+    await generateRoutes({ ...request, duration: 52 });
+    expect(vi.mocked(generateLiveRoutes).mock.calls[0][0].duration).toBe(52);
+    for (const duration of [4, 181, 52.5, '52']) expect(await generateRoutes({ ...request, duration })).toMatchObject({ ok: false, code: 'INVALID_INPUT' });
+  });
   it('explicitly labels the fixed sample destination', async () => {
     const result = await generateRoutes({ ...request, demo: true });
     expect(result.ok).toBe(true);
