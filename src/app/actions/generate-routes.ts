@@ -5,6 +5,7 @@ import { generateLiveRoutes } from "@/lib/geo/generate";
 import { generateDemoRoutes, DEMO_START, DEMO_DESTINATION } from "@/lib/demo-data";
 import { registerGeneratedRoutes } from "@/lib/events";
 import { distanceMeters, isCoordinates } from "@/lib/geo/coordinates";
+import { rankTimeMatchedRoutes } from "@/lib/geo/scoring";
 import type { ActionResult, GenerateRequest, GenerateResponse } from "@/lib/types";
 
 function validate(raw: unknown): GenerateRequest | null {
@@ -31,11 +32,15 @@ export async function generateRoutes(raw: unknown): Promise<ActionResult<Generat
   if (!request.demo && !process.env.GOOGLE_MAPS_API_KEY?.trim()) return { ok: false, error: "Live walks need a Google Maps server API key with Places API (New) and Routes API enabled. Select Demo Mode to try sample Edinburgh walks.", code: "MISSING_KEY" };
   try {
     const canonicalRequest = request.demo ? { ...request, start: DEMO_START, destination: request.mode === "destination" ? DEMO_DESTINATION : undefined } : request;
-    const result = request.demo ? generateDemoRoutes(canonicalRequest) : await generateLiveRoutes(canonicalRequest);
+    const samples = request.demo ? generateDemoRoutes(canonicalRequest) : undefined;
+    const result = samples ? rankTimeMatchedRoutes(samples, request.duration) : await generateLiveRoutes(canonicalRequest);
     const routes = result.map((route) => ({ ...route, id: randomUUID() }));
     registerGeneratedRoutes(canonicalRequest, routes);
     let message = request.demo ? `Sample Edinburgh routes: paths are hand-drawn illustrations and times are unverified estimates. Demo walks use a fixed start at the Meadows${request.mode === "destination" ? " and finish at the National Museum of Scotland" : ""}.` : undefined;
-    if (routes.length < 3) message = `${message ? `${message} ` : ""}${routes.length ? `Found ${routes.length} distinct walk${routes.length === 1 ? "" : "s"} within your time budget.` : "No suitable walks fit this budget. Try more time or another starting point."}`;
+    if (request.demo && !routes.length) {
+      const modeLabel = request.mode === "loop" ? "loops" : request.mode === "explore" ? "Explore routes" : "Targeted routes";
+      message = `The fixed demo ${modeLabel} do not match a ${request.duration}-minute trip. Demo routes use a fixed start at the Meadows${request.mode === "destination" ? " and finish at the National Museum of Scotland" : ""}. Switch off Demo Mode for a live route near your selected duration.`;
+    } else if (routes.length < 3) message = `${message ? `${message} ` : ""}${routes.length ? `Found ${routes.length} distinct walk${routes.length === 1 ? "" : "s"} near your selected total duration.` : "No suitable walks fit this duration. Try another duration or starting point."}`;
     return { ok: true, data: { routes, message } };
   } catch (error) {
     return { ok: false, error: error instanceof Error ? error.message : "The walking or place provider could not complete this request. Try again, choose another start, or select Demo Mode for sample Edinburgh walks.", code: "PROVIDER_ERROR" };

@@ -77,3 +77,4 @@ button,input { font:inherit; } button,a,input { -webkit-tap-highlight-color:tran
 .planner-title { margin:0 0 18px; font-size:22px; line-height:1.2; letter-spacing:-.5px; }
 .controls-footer { justify-content:flex-end; }
 .app-header>.edinburgh-pill { margin-left:auto; }
+.route-card>.loop-return-note { font-size:9px; color:#748465; margin-top:8px; }.activity-note { font-size:10px; line-height:1.6; color:#87917b; margin-top:9px; }.itinerary li .stop-description { font-size:9px; margin-top:5px; color:#969f89; } @media(max-width:767px) { .route-card>.loop-return-note,.activity-note,.itinerary li .stop-description { font-size:11px; } }

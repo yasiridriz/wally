@@ -2,7 +2,7 @@ import { describe, expect, it, vi } from "vitest";
 vi.mock("server-only", () => ({}));
 vi.mock("./geo/routing", () => ({ routeWalking: vi.fn() }));
 import { evaluateEventTiming, registerGeneratedRoutes, getRouteContext, buildEventDetours } from "./events";
-import { generateDemoRoutes, DEMO_START, DEMO_DESTINATION } from "./demo-data";
+import { demoRouteSamples, generateDemoRoutes, DEMO_START, DEMO_DESTINATION } from "./demo-data";
 import { generateRoutes } from "../app/actions/generate-routes";
 import { routeWalking } from "./geo/routing";
 import type { Event, GenerateRequest } from "./types";
@@ -25,7 +25,7 @@ describe("event feasibility", () => {
     expect(evaluateEventTiming(12, 4, 2, 5, { ...event, startTime: "invalid" }, departure, 90)).toBeNull();
   });
   it("reuses a detour result rather than repeating provider requests", async () => {
-    const route = { ...generateDemoRoutes(request)[0], source: "live" as const };
+    const route = { ...demoRouteSamples(request)[0], source: "live" as const };
     registerGeneratedRoutes(request, [route]);
     const context = getRouteContext(route.id)!;
     const provider = vi.fn(async () => []);
@@ -34,7 +34,7 @@ describe("event feasibility", () => {
   });
   it("offers only a routed detour that fits, preserving the loop endpoint", async () => {
     const liveRequest = { ...request, duration: 90 as const };
-    const route = { ...generateDemoRoutes(request)[0], source: "live" as const };
+    const route = { ...demoRouteSamples(request)[0], source: "live" as const };
     registerGeneratedRoutes(liveRequest, [route]);
     const now = Date.now();
     const example = { ...event, location: DEMO_START, startTime: new Date(now - 60000).toISOString(), endTime: new Date(now + 3600000).toISOString() };
@@ -50,7 +50,7 @@ describe("event feasibility", () => {
     expect(routeWalking).toHaveBeenCalledTimes(1);
   });
   it("rejects a detour when actual walking consumes the remaining budget", async () => {
-    const route = { ...generateDemoRoutes(request)[0], source: "live" as const };
+    const route = { ...demoRouteSamples(request)[0], source: "live" as const };
     registerGeneratedRoutes({ ...request, duration: 15 }, [route]);
     const now = Date.now();
     const example = { ...event, location: DEMO_START, startTime: new Date(now - 60000).toISOString(), endTime: new Date(now + 3600000).toISOString() };
@@ -59,7 +59,7 @@ describe("event feasibility", () => {
   });
   it("inserts an event before a chosen destination without replacing the endpoint", async () => {
     const destinationRequest: GenerateRequest = { ...request, mode: "destination", destination: DEMO_DESTINATION, duration: 90, demo: false };
-    const route = { ...generateDemoRoutes(destinationRequest)[0], id: "destination-event-test", source: "live" as const };
+    const route = { ...demoRouteSamples(destinationRequest)[0], id: "destination-event-test", source: "live" as const };
     registerGeneratedRoutes(destinationRequest, [route]);
     const now = Date.now();
     const example = { ...event, location: DEMO_START, startTime: new Date(now - 60000).toISOString(), endTime: new Date(now + 3600000).toISOString() };
@@ -80,11 +80,12 @@ describe("event feasibility", () => {
 
 describe("Edinburgh samples", () => {
   it.each([15, 30, 45, 60, 90] as const)("keeps all routes within %i minutes with honest provenance", (duration) => {
-    for (const mode of ["loop", "explore"] as const) {
+    for (const mode of ["loop", "explore", "destination"] as const) {
       const routes = generateDemoRoutes({ ...request, duration, mode });
-      expect(routes.length).toBe(3);
+      expect(routes.length).toBeLessThanOrEqual(3);
       for (const route of routes) {
         expect(route.totalMinutes).toBeLessThanOrEqual(duration);
+        expect(route.totalMinutes).toBeGreaterThanOrEqual(Math.ceil(duration * .9));
         expect(route.source).toBe("demo");
         expect(route.geometry.coordinates.length).toBeGreaterThan(1);
         const coordinates = route.geometry.coordinates;
@@ -95,21 +96,22 @@ describe("Edinburgh samples", () => {
     }
   });
   it("changes scores for visited places and mood", () => {
-    const first = generateDemoRoutes(request);
+    const first = demoRouteSamples(request);
+    expect(first.length).toBeGreaterThan(0);
     const visitedIds = first.flatMap((route) => route.stops.map((stop) => stop.id));
-    const revisited = generateDemoRoutes({ ...request, visitedIds });
+    const revisited = demoRouteSamples({ ...request, visitedIds });
     for (const route of first) {
       const match = revisited.find((candidate) => candidate.id === route.id);
       if (match) expect(match.score).toBeLessThan(route.score);
     }
-    expect(generateDemoRoutes({ ...request, mood: "historic" })).not.toEqual(generateDemoRoutes({ ...request, mood: "green" }));
+    expect(demoRouteSamples({ ...request, mood: "historic" })).not.toEqual(demoRouteSamples({ ...request, mood: "green" }));
   });
   it.each([15, 30, 45, 60, 90] as const)("keeps a fixed museum destination within a %i-minute sample budget", duration => {
     const routes = generateDemoRoutes({ ...request, mode: "destination", destination: { lat: 0, lng: 0 }, duration });
-    expect(routes.length).toBeGreaterThan(0);
     expect(routes.length).toBeLessThanOrEqual(3);
     for (const route of routes) {
       expect(route.totalMinutes).toBeLessThanOrEqual(duration);
+        expect(route.totalMinutes).toBeGreaterThanOrEqual(Math.ceil(duration * .9));
       expect(route.destination).toEqual(DEMO_DESTINATION);
       expect(route.geometry.coordinates[0]).toEqual([DEMO_START.lng, DEMO_START.lat]);
       expect(route.geometry.coordinates.at(-1)).toEqual([DEMO_DESTINATION.lng, DEMO_DESTINATION.lat]);
@@ -128,11 +130,16 @@ describe("generation action boundaries", () => {
     expect(await generateRoutes(input)).toMatchObject({ ok: false, code: "INVALID_INPUT" });
   });
   it("uses the canonical fixed start for sample routes", async () => {
-    const result = await generateRoutes({ ...request, start: { lat: 0, lng: 0 } });
+    const result = await generateRoutes({ ...request, duration: 15, start: { lat: 0, lng: 0 } });
     expect(result.ok).toBe(true);
     if (result.ok) {
       expect(result.data.message).toContain("fixed start");
       expect(result.data.routes[0].geometry.coordinates[0]).toEqual([DEMO_START.lng, DEMO_START.lat]);
     }
+  });
+  it.each(["loop", "explore", "destination"] as const)("never presents a short %s sample as a 90-minute trip", async mode => {
+    const result = await generateRoutes({ ...request, mode, destination: mode === 'destination' ? DEMO_DESTINATION : undefined, duration: 90 });
+    expect(result).toMatchObject({ ok: true, data: { routes: [] } });
+    if (result.ok) expect(result.data.message).toContain('do not match a 90-minute trip');
   });
 });

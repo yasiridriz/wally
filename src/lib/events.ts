@@ -1,6 +1,6 @@
 import "server-only";
 import { routeWalking } from "./geo/routing";
-import { scorePlaces, repetitionPenalty } from "./geo/scoring";
+import { estimateStopMinutes, scorePlaces, repetitionPenalty } from "./geo/scoring";
 import type { Coordinates, DetourOption, Event, GenerateRequest, WanderRoute } from "./types";
 
 type CachedRoute = { request: GenerateRequest; route: WanderRoute; createdAt: number; detours?: Promise<DetourOption[]> };
@@ -89,7 +89,7 @@ async function calculateEventDetours(context: CachedRoute, provider: EventProvid
       if (result.segmentSeconds.length !== waypoints.length - 1) continue;
       const walkingMinutes = Math.ceil(result.durationSeconds / 60);
       const bufferMinutes = Math.max(2, Math.ceil(walkingMinutes * 0.1));
-      const arrivalMinutes = Math.ceil(result.segmentSeconds.slice(0, insertion).reduce((sum, seconds) => sum + seconds, 0) / 60) + (insertion - 1) * 2;
+      const arrivalMinutes = Math.ceil(result.segmentSeconds.slice(0, insertion).reduce((sum, seconds) => sum + seconds, 0) / 60) + estimateStopMinutes(route.stops.slice(0, insertion - 1));
       const timing = evaluateEventTiming(walkingMinutes, route.stopMinutes, bufferMinutes, arrivalMinutes, event, departure, request.duration);
       if (!timing) continue;
       const eventRelevance = request.mood === "surprise" ? 80 :

@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import type { Place, WanderRoute } from "../types";
-import { estimateExperience, fitsTimeBudget, rankRoutes, repetitionPenalty, scorePlaces, stopOverlap } from "./scoring";
+import { durationTimeFit, estimateExperience, estimateExperienceWithStops, estimateStopMinutes, fitsTimeBudget, loopTimeFit, rankLoopRoutes, rankTimeMatchedRoutes, rankRoutes, repetitionPenalty, scorePlaces, stopOverlap } from "./scoring";
 import { distanceMeters, isCoordinates, toLngLat } from "./coordinates";
 
 const place = (id: string, category: Place["category"] = "park"): Place => ({ id, name: id, category, lat: 55.95, lng: -3.19, baseScenicScore: 80 });
@@ -58,5 +58,48 @@ describe("coordinate boundaries", () => {
     expect(isCoordinates({ lat: 90, lng: 0 })).toBe(false);
     expect(isCoordinates({ lat: 0, lng: 181 })).toBe(false);
     expect(distanceMeters({ lat: 0, lng: 0 }, { lat: 0, lng: 1 })).toBeCloseTo(111195, -1);
+  });
+});
+
+describe("loop duration targets", () => {
+  it.each([15, 30, 45, 60, 90])("requires actual total time near the %i-minute selection", budget => {
+    expect(loopTimeFit(Math.ceil(budget * .9), budget)).toBe(true);
+    expect(loopTimeFit(budget, budget)).toBe(true);
+    expect(loopTimeFit(Math.ceil(budget * .9) - 1, budget)).toBe(false);
+    expect(loopTimeFit(budget + 1, budget)).toBe(false);
+  });
+  it("counts individually planned visits without inflating walking time", () => {
+    const stops = [{ ...place('view'), visitMinutes: 5 }, { ...place('gallery'), visitMinutes: 8 }];
+    expect(estimateExperienceWithStops(65 * 60, stops)).toEqual({ walkingMinutes: 65, stopMinutes: 13, bufferMinutes: 7, totalMinutes: 85 });
+    expect(estimateStopMinutes([{ ...place('invalid'), visitMinutes: Infinity }, { ...place('long'), visitMinutes: 999 }])).toBe(4);
+  });
+  it("prioritises near-90-minute loops over higher-scoring short walks without padding", () => {
+    const short = { ...route('short', [place('a'), place('b')], 100), totalMinutes: 20 };
+    const good = { ...route('good', [place('c'), place('d')], 95), totalMinutes: 84 };
+    const closest = { ...route('closest', [place('e'), place('f')], 75), totalMinutes: 89 };
+    const tooLong = { ...route('long', [place('g'), place('h')], 99), totalMinutes: 91 };
+    expect(rankLoopRoutes([short, good, closest, tooLong], 90).map(r => r.id)).toEqual(['closest', 'good']);
+    expect(short.totalMinutes).toBe(20);
+  });
+});
+
+describe('consistent duration targets across route modes', () => {
+  it.each(['explore', 'destination'] as const)('ranks %s trips by actual closeness, excluding short and over-budget results', mode => {
+    const make = (id: string, totalMinutes: number, score: number): WanderRoute => ({
+      ...route(id, [place(id + '-a'), place(id + '-b')], score), totalMinutes, isLoop: false,
+      ...(mode === 'destination' ? { destination: { lat: 55.95, lng: -3.18 } } : {}),
+    });
+    const routes = [make('short', 20, 100), make('good', 83, 95), make('closest', 89, 75), make('long', 91, 100)];
+    const ranked = rankTimeMatchedRoutes(routes, 90);
+    expect(ranked.map(item => item.id)).toEqual(['closest', 'good']);
+    expect(ranked.every(item => durationTimeFit(item.totalMinutes, 90))).toBe(true);
+    expect(routes[0].totalMinutes).toBe(20);
+  });
+  it('applies the same inclusive boundaries and invalid-value rules to all modes', () => {
+    expect(durationTimeFit(81, 90)).toBe(true);
+    expect(durationTimeFit(90, 90)).toBe(true);
+    expect(durationTimeFit(80, 90)).toBe(false);
+    expect(durationTimeFit(91, 90)).toBe(false);
+    expect(durationTimeFit(NaN, 90)).toBe(false);
   });
 });

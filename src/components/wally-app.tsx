@@ -163,7 +163,7 @@ export default function WallyApp({ hasRoutingKey }: { hasRoutingKey: boolean }) 
       {preferences.demo ? <div className="sample-notice"><Info size={16} /><p><strong>Sample Edinburgh walks.</strong> Paths and times are illustrative, not verified directions.{!hasLiveSetup ? " Configure Google Maps to use live routing." : ""}</p></div> : null}
       {error ? <div className="error-notice" role="alert"><p>{error}</p>{!preferences.demo ? <button className="text-button" onClick={() => changePreferences({ ...preferences, demo: true })}>Try Edinburgh Demo Mode <ArrowUpRight size={14} /></button> : null}<button className="dismiss-error" onClick={() => setError("")} aria-label="Dismiss error"><X size={14} /></button></div> : null}
       {message ? <p className="generation-message" role="status">{message}</p> : null}
-      <div ref={resultsRef}><RouteResults routes={routes} selected={selected} onSelect={selectRoute} visited={visited} onVisit={visit} onRegenerate={generate} loading={loading} /></div>
+      <div ref={resultsRef}><RouteResults requestedMinutes={preferences.duration} routes={routes} selected={selected} onSelect={selectRoute} visited={visited} onVisit={visit} onRegenerate={generate} loading={loading} /></div>
       {preferences.includeEvents && selected && !selected.event ? <EventDetour options={detours} loading={detourLoading} error={detourError} onFind={findDetours} preview={preview} onPreview={setPreview} onAccept={acceptDetour} onCancel={() => setPreview(null)} /> : null}
       {acceptedDetour ? <p className="generation-message">Sample detour added: {acceptedDetour.event.name}. Total estimate includes the visit.</p> : null}
     </div></aside>

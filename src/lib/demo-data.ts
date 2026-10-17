@@ -1,5 +1,5 @@
 import type { Coordinates, GenerateRequest, Place, WanderRoute } from "./types";
-import { rankRoutes, scorePlaces } from "./geo/scoring";
+import { rankTimeMatchedRoutes, scorePlaces } from "./geo/scoring";
 
 // Hand-drawn paths along Edinburgh streets and park paths. These fixtures are
 // illustrative, not surveyed routes or a substitute for live directions.
@@ -45,9 +45,10 @@ function pathDistance(path: [number, number][]) {
   }, 0);
 }
 
-export function generateDemoRoutes(request: GenerateRequest): WanderRoute[] {
+/** All finite sample walks, before matching the requested total duration. */
+export function demoRouteSamples(request: GenerateRequest): WanderRoute[] {
   const candidates = request.mode === "destination" ? destinationFixtures : fixtures;
-  return rankRoutes(candidates.map((fixture, index): WanderRoute => {
+  return candidates.map((fixture, index): WanderRoute => {
     const stops = fixture.stops.map((id) => places[id]);
     const path = request.mode === "explore" ? fixture.path.slice(0, fixture.path.findIndex((point) => point[0] === stops.at(-1)!.lng && point[1] === stops.at(-1)!.lat) + 1) : fixture.path;
     const distanceMeters = Math.round(pathDistance(path));
@@ -55,5 +56,9 @@ export function generateDemoRoutes(request: GenerateRequest): WanderRoute[] {
     const stopMinutes = stops.length * 2;
     const bufferMinutes = Math.max(2, Math.ceil(walkingMinutes * 0.1));
     return { id: `demo-${request.mode}-${index}`, name: fixture.name, description: fixture.description, geometry: { type: "LineString", coordinates: path }, stops, distanceMeters, walkingMinutes, stopMinutes, bufferMinutes, totalMinutes: walkingMinutes + stopMinutes + bufferMinutes, score: scorePlaces(stops, request.mood, request.visitedIds), highlights: [stops[0].category === "park" ? "A little green space" : "Local discoveries", request.mode === "loop" ? "Back where you started" : request.mode === "destination" ? "Finish at the museum" : "A fresh finish", "Illustrative sample route"], isLoop: request.mode === "loop", source: "demo", ...(request.mode === "destination" ? { destination: DEMO_DESTINATION } : {}) };
-  }).filter((route) => route.totalMinutes <= request.duration));
+  }).filter((route) => route.totalMinutes <= request.duration);
+}
+
+export function generateDemoRoutes(request: GenerateRequest): WanderRoute[] {
+  return rankTimeMatchedRoutes(demoRouteSamples(request), request.duration);
 }

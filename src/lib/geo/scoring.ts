@@ -30,6 +30,46 @@ export function estimateExperience(durationSeconds: number, stopCount: number, e
   return { walkingMinutes, stopMinutes, bufferMinutes, totalMinutes: walkingMinutes + stopMinutes + bufferMinutes + eventMinutes };
 }
 
+/** Planned short visits, not claims about admission, opening hours or events. */
+export function plannedVisitMinutes(place: Place): number {
+  return Number.isFinite(place.visitMinutes) && place.visitMinutes! >= 1 && place.visitMinutes! <= 15
+    ? Math.ceil(place.visitMinutes!) : 2;
+}
+
+export function estimateStopMinutes(stops: Place[]): number {
+  return stops.reduce((sum, place) => sum + plannedVisitMinutes(place), 0);
+}
+
+export function estimateExperienceWithStops(durationSeconds: number, stops: Place[]) {
+  const timing = estimateExperience(durationSeconds, 0);
+  const stopMinutes = estimateStopMinutes(stops);
+  return { ...timing, stopMinutes, totalMinutes: timing.walkingMinutes + stopMinutes + timing.bufferMinutes };
+}
+
+/** All modes use the same conservative total-trip duration target. */
+export function durationTimeFit(totalMinutes: number, budget: number): boolean {
+  return fitsTimeBudget(totalMinutes, budget) && totalMinutes >= Math.ceil(budget * .9);
+}
+
+export function rankTimeMatchedRoutes(routes: WanderRoute[], budget: number): WanderRoute[] {
+  const ranked = routes.filter(route => durationTimeFit(route.totalMinutes, budget))
+    .sort((a, b) => Math.abs(budget - a.totalMinutes) - Math.abs(budget - b.totalMinutes) || b.score - a.score || a.name.localeCompare(b.name));
+  const selected: WanderRoute[] = [];
+  for (const route of ranked) {
+    if (selected.every(other => stopOverlap(route.stops, other.stops) <= .5)) selected.push(route);
+    if (selected.length === 3) break;
+  }
+  return selected;
+}
+
+export function loopTimeFit(totalMinutes: number, budget: number): boolean {
+  return durationTimeFit(totalMinutes, budget);
+}
+
+export function rankLoopRoutes(routes: WanderRoute[], budget: number): WanderRoute[] {
+  return rankTimeMatchedRoutes(routes.filter(route => route.isLoop), budget);
+}
+
 export function fitsTimeBudget(totalMinutes: number, budget: number): boolean {
   return Number.isFinite(totalMinutes) && totalMinutes > 0 && totalMinutes <= budget;
 }

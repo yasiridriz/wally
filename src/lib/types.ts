@@ -11,6 +11,8 @@ export type Place = Coordinates & {
   id: string; name: string; category: PlaceCategory; description?: string;
   baseScenicScore: number; tags?: Record<string, string>;
   attributions?: { displayName: string; uri?: string }[];
+  visitMinutes?: number;
+  suggestedActivity?: string;
 };
 export type Event = {
   id: string; name: string; location: Coordinates; startTime: string; endTime: string;
