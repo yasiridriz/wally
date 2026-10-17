@@ -1,9 +1,9 @@
 import "server-only";
 import type { Coordinates, GenerateRequest, Place, WanderRoute } from "../types";
-import { distanceMeters, isCoordinates, searchRadius } from "./coordinates";
+import { distanceMeters, isCoordinates } from "./coordinates";
 import { discoverExplorePlaces, discoverLoopPlaces, discoverTargetedPlaces } from "./places";
 import { routeWalking, type RoutingBudget } from "./routing";
-import { durationTimeFit, estimateExperience, estimateExperienceWithStops, fitsTimeBudget, preferenceScore, rankTimeMatchedRoutes, repetitionPenalty, scorePlaces } from "./scoring";
+import { durationTimeFit, estimateExperience, estimateExperienceWithStops, fitsTimeBudget, preferenceScore, rankTimeMatchedRoutes, rankRoutes, repetitionPenalty, scorePlaces } from "./scoring";
 import { chooseCandidate, loopCandidatePool, type ScenicCandidate } from "./loop-candidates";
 import { openCandidatePool } from "./open-candidates";
 import { paceSpeed } from "../pace";
@@ -50,7 +50,7 @@ export async function generateLiveRoutes(request: GenerateRequest): Promise<Wand
     throw new Error(`No ${modeName} close to ${request.duration} minutes could be planned from nearby scenic stops. Try another start or duration.`);
   }
 
-  const budget: RoutingBudget = { remaining: 8, rateLimited: false };
+  const budget: RoutingBudget = {remaining: 8, rateLimited: false};
   const attempted: ScenicCandidate[] = [];
   const routes: WanderRoute[] = [];
   const observed: { seconds: number; meters: number; totalMinutes: number }[] = [];
@@ -62,18 +62,24 @@ export async function generateLiveRoutes(request: GenerateRequest): Promise<Wand
     try {
       const routed = await routeWalking(routeWaypoints(candidate.stops, request), budget);
       const timing = estimateExperienceWithStops(routed.durationSeconds / paceSpeed(request.pace), candidate.stops);
-      observed.push({ seconds: routed.durationSeconds, meters: candidate.geographicMeters, totalMinutes: timing.totalMinutes });
+      observed.push({
+        seconds: routed.durationSeconds,
+        meters: candidate.geographicMeters,
+        totalMinutes: timing.totalMinutes
+      });
 
-      const fits = durationTimeFit(timing.totalMinutes, request.duration);
+      const withinBudget = durationTimeFit(timing.totalMinutes, request.duration);
       let overBudgetMins = 0;
 
-      if (!fits) {
+      if (!withinBudget) {
         if (request.mode === 'destination') {
           overBudgetMins = Math.round(timing.totalMinutes - request.duration);
         } else {
           return; // Skip non-destination routes that exceed time budget
         }
       }
+
+      const isOverBudget = !withinBudget;
 
       const stops = candidate.stops;
       const dominant = [...stops].sort((a, b) => preferenceScore(b, request.moods) - preferenceScore(a, request.moods) || b.baseScenicScore - a.baseScenicScore)[0];
@@ -83,8 +89,7 @@ export async function generateLiveRoutes(request: GenerateRequest): Promise<Wand
       routes.push({
         id: crypto.randomUUID(),
         name: `${dominant.name} ${suffix}`,
-        description: `Discover ${stops.map((place) => place.name).join(" and ")}${ending}${!fits ? ` Note: Exceeds preferred time by ${overBudgetMins} minutes.` : ""}`,
-        geometry: routed.geometry,
+        description: `Discover ${stops.map((place) => place.name).join(" and ")}${ending}${isOverBudget ? ` Note: Exceeds preferred time by ${overBudgetMins} minutes.` : ""}`,        geometry: routed.geometry,
         stops,
         distanceMeters: Math.round(routed.distanceMeters),
         ...timing,
@@ -95,14 +100,16 @@ export async function generateLiveRoutes(request: GenerateRequest): Promise<Wand
         pace: request.pace ?? "walk",
         routingWarnings: [
           ...(routed.warnings || []),
-          ...(!fits ? [`Exceeds selected budget by ${overBudgetMins} mins`] : [])
+          ...(isOverBudget ? [`Exceeds selected budget by ${overBudgetMins} mins`] : [])
         ],
-        exceedsBudget: !fits,
+        exceedsBudget: isOverBudget,
         budgetMinutes: request.duration,
         overBudgetMinutes: overBudgetMins,
-        ...(request.mode === "destination" ? { destination: request.destination } : {})
+        ...(request.mode === "destination" ? {destination: request.destination} : {})
       });
-    } catch (error) { lastError = error; }
+    } catch (error) {
+      lastError = error;
+    }
   }
 
   const initial: ScenicCandidate[] = [];
@@ -112,11 +119,13 @@ export async function generateLiveRoutes(request: GenerateRequest): Promise<Wand
   }
 
   let next = 0;
+
   async function worker() {
     while (next < initial.length && budget.remaining > 0 && !budget.rateLimited) {
       await calculate(initial[next++]);
     }
   }
+
   await Promise.all([worker(), worker()]);
 
   for (let index = 0; index < 2 && budget.remaining > 0 && !budget.rateLimited; index++) {
@@ -133,6 +142,11 @@ export async function generateLiveRoutes(request: GenerateRequest): Promise<Wand
     const verifiedLabel = request.mode === "loop" ? "loops" : `${request.mode === "explore" ? "Explore" : "Targeted"} walks`;
     const detail = totals.length ? ` Verified ${verifiedLabel} ranged from ${totals[0]} to ${totals[totals.length - 1]} minutes.` : "";
     throw new Error(`No ${modeName} close to ${request.duration} minutes fits your budget.${detail} Try another start or duration.`);
+  }
+
+  const hasOverBudget = routes.some(r => r.exceedsBudget);
+  if (request.mode === "destination" && hasOverBudget) {
+    return rankRoutes(routes);
   }
 
   return rankTimeMatchedRoutes(routes, request.duration);
