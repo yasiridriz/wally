@@ -3,7 +3,7 @@
 import dynamic from "next/dynamic";
 import Link from "next/link";
 import { useEffect, useEffectEvent, useRef, useState } from "react";
-import { ArrowDown, ArrowUpRight, Compass, Footprints, Info, Leaf, MapPin, Navigation, Route, Sparkles, X } from "lucide-react";
+import { ArrowDown, ArrowUpRight, Compass, Info, Navigation, Route, X } from "lucide-react";
 import { generateRoutes } from "@/app/actions/generate-routes";
 import { getEventDetours } from "@/app/actions/get-events";
 import { DEMO_START, DEMO_DESTINATION } from "@/lib/demo-data";
@@ -13,7 +13,7 @@ import RouteControls, { type Preferences } from "./route-controls";
 import RouteResults from "./route-results";
 import EventDetour from "./event-detour";
 
-const WanderMap = dynamic(() => import("./map/wander-map"), { ssr: false, loading: () => <div className="map-loading"><Compass size={35} /><span>Unfolding the map…</span></div> });
+const WanderMap = dynamic(() => import("./map/wander-map"), { ssr: false, loading: () => <div className="map-loading"><Compass size={35} /><span>Loading map…</span></div> });
 const EDINBURGH_CENTER: Coordinates = { lat: 55.9533, lng: -3.1883 };
 
 export default function WallyApp({ hasRoutingKey }: { hasRoutingKey: boolean }) {
@@ -157,19 +157,17 @@ export default function WallyApp({ hasRoutingKey }: { hasRoutingKey: boolean }) 
 
   return <main className={`wally-shell ${mobileExpanded ? "planner-expanded" : "planner-collapsed"}`}>
     <div className="map-stage"><WanderMap start={effectiveStart} hasStart={effectiveStartSelected} routes={shownRoutes} selected={shownRoute} destination={preferences.mode === "destination" ? effectiveDestination : undefined} onStartChange={changeMapLocation} canSetStart={!loading && !preferences.demo} event={preview?.event || selected?.event} /></div>
-    <header className="app-header"><Link className="wordmark" href="/" aria-label="Wally home"><span className="brand-icon"><Route size={25} strokeWidth={2.1} /></span>wally<span className="brand-period">.</span></Link><span className="brand-tagline">Take the scenic route to nowhere.</span><div className="header-right"><span className="edinburgh-pill"><MapPin size={14} />{preferences.demo ? "EDINBURGH EDITION" : "A WALK LESS ORDINARY"}</span><a className="about-link" href="https://www.google.com/maps/about/" target="_blank" rel="noreferrer">Made for wandering <ArrowUpRight size={14} /></a></div></header>
-    <aside className={`adventure-panel ${mobileExpanded ? "expanded" : "collapsed"}`} aria-label="Plan your walk"><button className="sheet-handle" onClick={() => setMobileExpanded(value => !value)} aria-expanded={mobileExpanded} aria-label={mobileExpanded ? "Collapse walk planner" : "Expand walk planner"}><span /><strong>{mobileExpanded ? "Your next little adventure" : `${routes.length ? "Your walks are ready" : "Find your next wander"}`}</strong><ArrowDown size={15} /></button><div className="panel-scroll">
+    <header className="app-header"><Link className="wordmark" href="/" aria-label="Wally home"><span className="brand-icon"><Route size={25} strokeWidth={2.1} /></span>wally<span className="brand-period">.</span></Link><span className="brand-tagline">Take the scenic route to nowhere.</span>{preferences.demo ? <span className="edinburgh-pill">DEMO MODE</span> : null}</header>
+    <aside className={`adventure-panel ${mobileExpanded ? "expanded" : "collapsed"}`} aria-label="Plan your walk"><button className="sheet-handle" onClick={() => setMobileExpanded(value => !value)} aria-expanded={mobileExpanded} aria-label={mobileExpanded ? "Collapse walk planner" : "Expand walk planner"}><span /><strong>{routes.length ? "Your routes" : "Plan your walk"}</strong><ArrowDown size={15} /></button><div className="panel-scroll">
       <RouteControls preferences={preferences} onChange={changePreferences} onGenerate={generate} onLocate={locate} locating={locating} loading={loading} locationLabel={locationLabel} destinationLabel={destinationLabel} pickingTarget={pickingTarget} onPickTarget={target => { setPickingTarget(target); if (window.innerWidth < 768) setMobileExpanded(false); }} hasDestination={Boolean(effectiveDestination)} hasStart={effectiveStartSelected} startAddress={startAddress} destinationAddress={destinationAddress} near={start} startSearchKey={startSearchKey} destinationSearchKey={destinationSearchKey} onSearchSelect={chooseSearchLocation} onClearLocation={clearLocation} />
-      {preferences.demo ? <div className="sample-notice"><Info size={16} /><p><strong>A little taste of Wally.</strong> Demo Mode uses sample Edinburgh paths and estimated times, unverified for navigation.{!hasLiveSetup ? " Live maps and walking routes need Google Maps browser and server API keys." : " Switch Demo Mode off for live Google Maps walking routes."}</p></div> : null}
+      {preferences.demo ? <div className="sample-notice"><Info size={16} /><p><strong>Sample Edinburgh walks.</strong> Paths and times are illustrative, not verified directions.{!hasLiveSetup ? " Configure Google Maps to use live routing." : ""}</p></div> : null}
       {error ? <div className="error-notice" role="alert"><p>{error}</p>{!preferences.demo ? <button className="text-button" onClick={() => changePreferences({ ...preferences, demo: true })}>Try Edinburgh Demo Mode <ArrowUpRight size={14} /></button> : null}<button className="dismiss-error" onClick={() => setError("")} aria-label="Dismiss error"><X size={14} /></button></div> : null}
       {message ? <p className="generation-message" role="status">{message}</p> : null}
       <div ref={resultsRef}><RouteResults routes={routes} selected={selected} onSelect={selectRoute} visited={visited} onVisit={visit} onRegenerate={generate} loading={loading} /></div>
       {preferences.includeEvents && selected && !selected.event ? <EventDetour options={detours} loading={detourLoading} error={detourError} onFind={findDetours} preview={preview} onPreview={setPreview} onAccept={acceptDetour} onCancel={() => setPreview(null)} /> : null}
       {acceptedDetour ? <p className="generation-message">Sample detour added: {acceptedDetour.event.name}. Total estimate includes the visit.</p> : null}
     </div></aside>
-    {!routes.length && !loading ? <div className="map-welcome"><span className="welcome-icon"><Leaf size={20} /></span><div><strong>The best way home<br />might be the long way.</strong><p>Find a new favourite corner.</p></div><Sparkles className="welcome-spark" size={23} /></div> : null}
-    <div className="map-caption"><span className="status-dot" />{preview ? "PREVIEWING YOUR SAMPLE EVENT DETOUR" : selected ? selected.source === "demo" ? "SAMPLE WALK · ESTIMATED, UNVERIFIED PATH" : "YOUR WALK, YOUR PACE" : preferences.demo ? "SAMPLE WALKS · REAL CURIOSITY" : pickingTarget === "destination" && preferences.mode === "destination" ? "TAP THE MAP TO PICK YOUR DESTINATION" : "TAP THE MAP TO PICK YOUR START"}</div>
+    {preview || selected?.source === "demo" || (!selected && !preferences.demo) ? <div className="map-caption"><span className="status-dot" />{preview ? "DETOUR PREVIEW" : selected?.source === "demo" ? "SAMPLE ROUTE · UNVERIFIED PATH" : pickingTarget === "destination" && preferences.mode === "destination" ? "TAP TO SET DESTINATION" : "TAP TO SET START"}</div> : null}
     <button className="map-location-button" onClick={locate} disabled={locating || preferences.demo || loading} aria-label="Find my location"><Navigation size={20} /></button>
-    <div className="map-bottom-note"><Footprints size={14} /> A little less A to B. A little more let’s see.</div>
   </main>;
 }

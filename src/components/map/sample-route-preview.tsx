@@ -16,7 +16,7 @@ export default function SampleRoutePreview({ start, routes, selected }: { start:
   const point = (lng: number, lat: number) => [80 + (lng - minLng) / width * 640, 450 - (lat - minLat) / height * 340];
   const [startX, startY] = point(start.lng, start.lat);
   return <section className="sample-route-preview" aria-label="Sample route schematic, not a navigable map">
-    <div className="schematic-heading"><Compass size={20} /><div><strong>A little preview of your wander</strong><p>Sample route schematic · not a map or navigation</p></div></div>
+    <div className="schematic-heading"><Compass size={20} /><div><strong>Sample route preview</strong><p>Sample route schematic · not a map or navigation</p></div></div>
     <svg viewBox="0 0 800 560" role="img" aria-label={shown ? `Illustrative path for ${shown.name}, with numbered sample stops` : "Generate a demo route to see its illustrative path"}>
       <defs><pattern id="schematic-grid" width="32" height="32" patternUnits="userSpaceOnUse"><circle cx="2" cy="2" r="1" fill="#c5cdb7" /></pattern></defs>
       <rect width="800" height="560" fill="url(#schematic-grid)" />
