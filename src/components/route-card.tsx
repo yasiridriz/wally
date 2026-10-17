@@ -20,15 +20,15 @@ export default function RouteCard({ route, index, selected, planner }: { route: 
       <span className="route-stats"><span><Clock3 size={13} />{route.totalMinutes} min</span><span><Footprints size={13} />{(route.distanceMeters / 1000).toFixed(1)} km</span><span><MapPin size={13} />{route.stops.length} {route.stops.length === 1 ? "stop" : "stops"}</span></span>
       <span className="route-description">{route.description}</span>
       <span className="route-pills">
-        <span className="pill match">{matchReason(route, planner.preferences.mood)}</span>
+        <span className="pill match">{matchReason(route, planner.preferences.moods)}</span>
         <span className="pill score">Wander score {Math.round(route.score)}</span>
         {route.event ? <span className="pill sample">Sample event</span> : null}
         {route.highlights.slice(0, 3).map(highlight => <span key={highlight} className="pill">{highlight}</span>)}
       </span>
     </button>
     {selected ? <div id={detailsId} className="route-details">
-      <p className="time-breakdown"><Clock3 size={14} />{route.walkingMinutes} min walking · {route.stopMinutes} min at stops · {route.bufferMinutes} min buffer</p>
-      <p className="route-shape-note">{route.isLoop ? "Returns to your start." : route.destination ? "Finishes at your destination." : "Finishes at the last stop."} Walking and stops included.</p>
+      <p className="time-breakdown"><Clock3 size={14} />{route.walkingMinutes} min {route.pace === "run" ? "running" : "walking"} · {route.stopMinutes} min at stops · {route.bufferMinutes} min buffer</p>
+      <p className="route-shape-note">{route.isLoop ? "Returns to your start." : route.destination ? "Finishes at your destination." : "Finishes at the last stop."} {route.pace === "run" ? "Running" : "Walking"} and stops included.</p>
       {route.stops.some(stop => stop.suggestedActivity) ? <p className="activity-note">Activities are suggestions. Check access and opening hours.</p> : null}
       <ol className="itinerary">
         {route.stops.map((stop, stopIndex) => <li key={stop.id}>

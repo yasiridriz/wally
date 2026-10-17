@@ -34,7 +34,7 @@ public actor WallyService {
       let separation = distanceMeters(request.start, destination)
       if separation < 50 { return .failure(WallyError("INVALID_DESTINATION", "Choose a destination at least 50 metres from your start, or try a loop.")) }
       // A generous lower-bound screen prevents requests over implausibly large areas.
-      if separation > Double(request.minutes * 90) { return .failure(WallyError("DESTINATION_TOO_FAR", "That destination is too far for this walking budget. Choose somewhere closer or allow more time.")) }
+      if separation > Double(request.minutes * 90) * request.pace.speed { return .failure(WallyError("DESTINATION_TOO_FAR", "That destination is too far for this \(request.pace == .run ? "running" : "walking") budget. Choose somewhere closer or allow more time.")) }
     }
     if !request.demo && !client.hasKey {
       return .failure(WallyError("MISSING_KEY", "Live walks need a Google Maps API key with Places API (New) and Routes API enabled. Select Demo Mode to try sample Edinburgh walks."))

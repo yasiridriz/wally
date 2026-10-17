@@ -186,7 +186,7 @@ final class AppModel {
     clearResults()
     let version = requestVersion
     loading = true; mobileExpanded = true
-    let request = GenerateRequest(start: effectiveStart, duration: preferences.duration, mood: preferences.mood, mode: preferences.mode, visitedIds: visited,
+    let request = GenerateRequest(start: effectiveStart, duration: preferences.duration, moods: preferences.moods, mode: preferences.mode, pace: preferences.pace, visitedIds: visited,
       includeEvents: preferences.includeEvents, demo: preferences.demo, destination: preferences.mode == .destination ? effectiveDestination : nil)
     Task {
       let result = await service.generateRoutes(request)

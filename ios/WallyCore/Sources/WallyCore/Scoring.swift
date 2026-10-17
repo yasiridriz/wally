@@ -2,23 +2,47 @@ import Foundation
 
 private func clamp(_ n: Double) -> Double { min(100, max(0, n)) }
 private let matches: [Mood: [PlaceCategory]] = [
-  .surprise: [.park, .viewpoint, .historic, .art, .attraction, .path],
   .scenic: [.viewpoint, .park, .path], .green: [.park, .path],
   .historic: [.historic], .hidden: [.art, .path],
 ]
 
-public func preferenceScore(_ place: Place, _ mood: Mood) -> Double {
-  mood == .surprise ? 75 : (matches[mood] ?? []).contains(place.category) ? 100 : 30
+public func matchesMood(_ place: Place, _ mood: Mood) -> Bool { (matches[mood] ?? []).contains(place.category) }
+
+/// No tags is Surprise me; otherwise a place scores fully when it fits any selected tag.
+public func preferenceScore(_ place: Place, _ moods: [Mood]) -> Double {
+  moods.isEmpty ? 75 : moods.contains { matchesMood(place, $0) } ? 100 : 30
 }
 
-public func scorePlaces(_ stops: [Place], mood: Mood, visitedIds: [String], eventRelevance: Double? = nil) -> Double {
+/// Share of the selected tags that at least one stop satisfies, 0 to 100.
+public func moodCoverage(_ stops: [Place], _ moods: [Mood]) -> Double {
+  guard !moods.isEmpty else { return 100 }
+  return Double(moods.filter { mood in stops.contains { matchesMood($0, mood) } }.count) / Double(moods.count) * 100
+}
+
+/// Keeps the strongest places for every selected tag in the shortlist, so a
+/// minority tag is not crowded out before candidate walks are combined.
+/// Original order is preserved; with fewer than two tags this is a plain prefix.
+public func shortlistForMoods(_ places: [Place], _ moods: [Mood], limit: Int = 20) -> [Place] {
+  guard moods.count > 1, places.count > limit else { return Array(places.prefix(limit)) }
+  var keep = Set<String>()
+  let perMood = max(2, limit / (moods.count + 1))
+  for mood in moods {
+    for place in places.filter({ matchesMood($0, mood) }).prefix(perMood) { keep.insert(place.id) }
+  }
+  for place in places where keep.count < limit { keep.insert(place.id) }
+  return places.filter { keep.contains($0.id) }
+}
+
+public func scorePlaces(_ stops: [Place], moods: [Mood], visitedIds: [String], eventRelevance: Double? = nil) -> Double {
   guard !stops.isEmpty else { return 0 }
   func average(_ fn: (Place) -> Double) -> Double { stops.reduce(0) { $0 + fn($1) } / Double(stops.count) }
   let scenic = average { clamp($0.baseScenicScore) }
   let visited = Set(visitedIds)
   let novelty = average { visited.contains($0.id) ? 15 : ($0.category == .art || $0.category == .path) ? 95 : 80 }
   let variety = min(100, Double(Set(stops.map(\.category)).count) / Double(min(3, stops.count)) * 100)
-  let preference = average { preferenceScore($0, mood) }
+  // With several tags, a walk that touches each of them beats one that repeats a single tag.
+  let fit = average { preferenceScore($0, moods) }
+  let preference = moods.count > 1 ? fit * 0.5 + moodCoverage(stops, moods) * 0.5 : fit
   let base = scenic * 0.30 + novelty * 0.25 + variety * 0.15 + preference * 0.20
   guard let eventRelevance else { return (base / 0.9).rounded() }
   return (base + clamp(eventRelevance) * 0.10).rounded()

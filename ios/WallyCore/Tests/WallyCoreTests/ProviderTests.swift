@@ -18,7 +18,7 @@ final class PlacesTests: XCTestCase {
 
   func testNearbySearchSendsKeyHeaderFieldMaskAndBundleId() async throws {
     let transport = MockTransport { _ in (200, ["places": [googlePlace("one")]]) }
-    let request = GenerateRequest(start: start, duration: .m30, mood: .surprise, mode: .loop)
+    let request = GenerateRequest(start: start, duration: .m30, mode: .loop)
     _ = try await discoverLoopPlaces(client(transport), request)
     let first = transport.requests[0]
     XCTAssertEqual(first.url?.absoluteString, "https://places.googleapis.com/v1/places:searchNearby")
@@ -31,10 +31,10 @@ final class PlacesTests: XCTestCase {
 
   func testLongWalksUseAtMostSixRequestsAndStopOnRateLimit() async throws {
     let transport = MockTransport { _ in (200, ["places": []]) }
-    _ = try await discoverExplorePlaces(client(transport), GenerateRequest(start: start, duration: .m90, mood: .surprise, mode: .explore))
+    _ = try await discoverExplorePlaces(client(transport), GenerateRequest(start: start, duration: .m90, mode: .explore))
     XCTAssertEqual(transport.count, 6)
     let limited = MockTransport { _ in (429, [:]) }
-    do { _ = try await discoverLoopPlaces(client(limited), GenerateRequest(start: start, duration: .m90, mood: .surprise, mode: .loop)); XCTFail("Expected a rate-limit error") }
+    do { _ = try await discoverLoopPlaces(client(limited), GenerateRequest(start: start, duration: .m90, mode: .loop)); XCTFail("Expected a rate-limit error") }
     catch { XCTAssertEqual((error as? ProviderError)?.status, 429) }
     XCTAssertEqual(limited.count, 1)
   }
@@ -113,7 +113,7 @@ final class PhotoAndServiceTests: XCTestCase {
     }
     let service = WallyService(client: client(transport))
     if case .success = await service.walkSummary(routeId: "unknown") { XCTFail("Unknown routes must not load photos") }
-    let demo = await service.generateRoutes(GenerateRequest(start: start, duration: .m15, mood: .surprise, mode: .loop, demo: true))
+    let demo = await service.generateRoutes(GenerateRequest(start: start, duration: .m15, mode: .loop, demo: true))
     let routes = try demo.get().routes
     XCTAssertFalse(routes.isEmpty)
     XCTAssertEqual(routes[0].start, demoStart)
@@ -124,13 +124,13 @@ final class PhotoAndServiceTests: XCTestCase {
 
   func testServiceValidatesDestinations() async {
     let service = WallyService(client: client(MockTransport { _ in (200, [:]) }))
-    let close = await service.generateRoutes(GenerateRequest(start: start, duration: .m30, mood: .surprise, mode: .destination, destination: start))
+    let close = await service.generateRoutes(GenerateRequest(start: start, duration: .m30, mode: .destination, destination: start))
     XCTAssertEqual(close.failureCode, "INVALID_DESTINATION")
-    let far = await service.generateRoutes(GenerateRequest(start: start, duration: .m30, mood: .surprise, mode: .destination, destination: Coordinates(lat: 51.5, lng: -0.12)))
+    let far = await service.generateRoutes(GenerateRequest(start: start, duration: .m30, mode: .destination, destination: Coordinates(lat: 51.5, lng: -0.12)))
     XCTAssertEqual(far.failureCode, "DESTINATION_TOO_FAR")
-    let missing = await service.generateRoutes(GenerateRequest(start: start, duration: .m30, mood: .surprise, mode: .destination))
+    let missing = await service.generateRoutes(GenerateRequest(start: start, duration: .m30, mode: .destination))
     XCTAssertEqual(missing.failureCode, "INVALID_INPUT")
-    let noKey = await WallyService(client: GoogleClient(apiKey: nil)).generateRoutes(GenerateRequest(start: start, duration: .m30, mood: .surprise, mode: .loop))
+    let noKey = await WallyService(client: GoogleClient(apiKey: nil)).generateRoutes(GenerateRequest(start: start, duration: .m30, mode: .loop))
     XCTAssertEqual(noKey.failureCode, "MISSING_KEY")
   }
 
@@ -161,7 +161,7 @@ final class LiveGenerationTests: XCTestCase {
       // 18 minutes walking + 2 buffer + 8 visit minutes (park and museum) fits a 30-minute walk.
       return (200, ["routes": [["polyline": ["geoJsonLinestring": ["type": "LineString", "coordinates": [point("origin"), [-3.185, 55.946], point("destination")]]], "distanceMeters": 1700, "duration": "1080s", "legs": Array(repeating: ["duration": "\(1080 / legs)s"], count: legs)]]])
     }
-    let routes = try await generateLiveRoutes(client(transport), GenerateRequest(start: start, duration: .m30, mood: .surprise, mode: .loop))
+    let routes = try await generateLiveRoutes(client(transport), GenerateRequest(start: start, duration: .m30, mode: .loop))
     let routing = transport.requests.filter { $0.url?.host == "routes.googleapis.com" }
     XCTAssertFalse(routes.isEmpty)
     XCTAssertLessThanOrEqual(routing.count, 8)

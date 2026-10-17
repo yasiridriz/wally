@@ -76,11 +76,15 @@ struct RouteControlsView: View {
       }.padding(.top, 24)
 
       VStack(alignment: .leading, spacing: 0) {
-        Text("Mood").wallyText(12, .semibold).padding(.bottom, 11)
+        HStack(alignment: .firstTextBaseline, spacing: 6) {
+          Text("Mood").wallyText(12, .semibold)
+          Text("Pick as many as you like").wallyText(9, .regular, Color(hex: 0x929787))
+        }.padding(.bottom, 11)
         FlowLayout(spacing: 7) {
           ForEach(moods, id: \.0) { mood, label, symbol in
-            let active = prefs.mood == mood
-            Button { update { $0.mood = mood } } label: {
+            // Surprise me is the empty selection; every other tag toggles on its own.
+            let active = mood == .surprise ? prefs.moods.isEmpty : prefs.moods.contains(mood)
+            Button { update { if mood == .surprise { $0.moods = [] } else { $0.toggleMood(mood) } } } label: {
               HStack(spacing: 6) { Image(systemName: symbol).font(.system(size: 13)); Text(label).lineLimit(1) }
                 .wallyText(12, .regular, active ? .forest : Color(hex: 0x78806f)).padding(.vertical, 10).padding(.horizontal, 13)
                 .background(Capsule().fill(active ? Color(hex: 0xeaf0df) : .clear)).overlay(Capsule().stroke(active ? Color(hex: 0xa7b89b) : .line, lineWidth: 1))

@@ -1,6 +1,7 @@
 import "server-only";
 import { routeWalking } from "./geo/routing";
 import { estimateStopMinutes, scorePlaces, repetitionPenalty } from "./geo/scoring";
+import { paceSpeed } from "./pace";
 import type { Coordinates, DetourOption, Event, GenerateRequest, SummaryPhoto, WanderRoute } from "./types";
 
 type CachedRoute = { request: GenerateRequest; route: WanderRoute; createdAt: number; detours?: Promise<DetourOption[]>; photos?: Promise<SummaryPhoto[]> };
@@ -87,16 +88,17 @@ async function calculateEventDetours(context: CachedRoute, provider: EventProvid
     try {
       const result = await routeWalking(waypoints, budget);
       if (result.segmentSeconds.length !== waypoints.length - 1) continue;
-      const walkingMinutes = Math.ceil(result.durationSeconds / 60);
+      const speed = paceSpeed(request.pace);
+      const walkingMinutes = Math.ceil(result.durationSeconds / speed / 60);
       const bufferMinutes = Math.max(2, Math.ceil(walkingMinutes * 0.1));
-      const arrivalMinutes = Math.ceil(result.segmentSeconds.slice(0, insertion).reduce((sum, seconds) => sum + seconds, 0) / 60) + estimateStopMinutes(route.stops.slice(0, insertion - 1));
+      const arrivalMinutes = Math.ceil(result.segmentSeconds.slice(0, insertion).reduce((sum, seconds) => sum + seconds, 0) / speed / 60) + estimateStopMinutes(route.stops.slice(0, insertion - 1));
       const timing = evaluateEventTiming(walkingMinutes, route.stopMinutes, bufferMinutes, arrivalMinutes, event, departure, request.duration);
       if (!timing) continue;
-      const eventRelevance = request.mood === "surprise" ? 80 :
-        request.mood === "historic" && event.category === "history" ? 100 :
-        request.mood === "hidden" && ["art", "music"].includes(event.category) ? 100 : 60;
+      const eventRelevance = !request.moods.length ? 80 :
+        (request.moods.includes("historic") && event.category === "history") ||
+        (request.moods.includes("hidden") && ["art", "music"].includes(event.category)) ? 100 : 60;
       const modified: WanderRoute = { ...route, event, eventStopIndex: insertion - 1, id: `${route.id}:${event.id}`, name: `${route.name} + a sample event`, geometry: result.geometry, distanceMeters: result.distanceMeters, walkingMinutes, stopMinutes: route.stopMinutes + event.visitMinutes + timing.waitMinutes, bufferMinutes, totalMinutes: timing.totalMinutes, description: `${route.description} Includes a fictional sample event (${event.visitMinutes} minutes${timing.waitMinutes ? `, plus ${timing.waitMinutes} minutes waiting` : ""}).`, highlights: [...route.highlights.slice(0, 2), "Fictional sample event"] };
-      modified.score = Math.max(0, scorePlaces(route.stops, request.mood, request.visitedIds, eventRelevance) - repetitionPenalty(result.geometry));
+      modified.score = Math.max(0, scorePlaces(route.stops, request.moods, request.visitedIds, eventRelevance) - repetitionPenalty(result.geometry));
       modified.routingWarnings = result.warnings;
       options.push({ id: modified.id, event, route: modified, additionalMinutes: Math.max(0, modified.totalMinutes - route.totalMinutes), additionalDistanceMeters: Math.max(0, modified.distanceMeters - route.distanceMeters), arrivalTime: timing.arrivalTime });
     } catch {

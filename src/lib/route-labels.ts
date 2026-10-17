@@ -1,18 +1,26 @@
-import { preferenceScore } from "./geo/scoring";
-import type { Mood, WanderRoute } from "./types";
+import { matchesMood } from "./geo/scoring";
+import type { Mood, MoodTag, WanderRoute } from "./types";
 
 export const MOOD_LABELS: Record<Mood, string> = {
   surprise: "Surprise me", scenic: "Scenic", green: "Green & peaceful", historic: "Historic", hidden: "Hidden gems",
 };
 
 /** A short, truthful reason based only on the stop categories the engine used. */
-export function matchReason(route: WanderRoute, mood: Mood): string {
-  if (mood === "surprise") return "Picked for surprise";
-  return route.stops.some(stop => preferenceScore(stop, mood) === 100) ? `Leans into ${MOOD_LABELS[mood]}` : "A gentle mix";
+export function matchReason(route: WanderRoute, moods: readonly MoodTag[]): string {
+  if (!moods.length) return "Picked for surprise";
+  const matched = moods.filter(mood => route.stops.some(stop => matchesMood(stop, mood)));
+  if (!matched.length) return "A gentle mix";
+  return `Leans into ${matched.length > 2 ? `${matched.length} of your tags` : matched.map(mood => MOOD_LABELS[mood]).join(" & ")}`;
+}
+
+/** "Surprise me", one tag's name, "Scenic + Historic", or "3 tags" when space runs out. */
+export function moodsLabel(moods: readonly MoodTag[]): string {
+  if (!moods.length) return MOOD_LABELS.surprise;
+  return moods.length > 2 ? `${moods.length} tags` : moods.map(mood => MOOD_LABELS[mood]).join(" + ");
 }
 
 /** The summary bar line, e.g. "Loop back · Historic" or "Anywhere · Surprise me". */
-export function routeShapeLabel({ loop, destinationLabel, mood, includeEvents }: { loop: boolean; destinationLabel?: string; mood: Mood; includeEvents: boolean }): string {
+export function routeShapeLabel({ loop, destinationLabel, moods, includeEvents }: { loop: boolean; destinationLabel?: string; moods: readonly MoodTag[]; includeEvents: boolean }): string {
   const shape = loop ? "Loop back" : destinationLabel ? `To ${destinationLabel}` : "Anywhere";
-  return [shape, MOOD_LABELS[mood], includeEvents ? "Event detours" : ""].filter(Boolean).join(" · ");
+  return [shape, moodsLabel(moods), includeEvents ? "Event detours" : ""].filter(Boolean).join(" · ");
 }

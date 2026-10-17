@@ -83,7 +83,7 @@ describe("Google Nearby Search requests", () => {
   });
 });
 
-const loopRequest: GenerateRequest = { start, duration: 90, mood: "scenic", mode: "loop", visitedIds: [], includeEvents: false, demo: false };
+const loopRequest: GenerateRequest = { start, duration: 90, moods: ["scenic"], mode: "loop", visitedIds: [], includeEvents: false, demo: false };
 
 describe("loop discovery coverage", () => {
   it("searches a 90-minute outer ring sequentially and retains distant discoveries", async () => {

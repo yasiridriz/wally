@@ -19,7 +19,7 @@ private func discoverRoutePlaces(_ client: GoogleClient, _ request: GenerateRequ
     guard let destination = request.destination, isCoordinates(destination) else { throw ProviderError("Choose a destination before finding a scenic route.") }
     // An optimistic straight-line lower bound prevents wasting provider requests
     // when the fixed endpoint cannot fit even before network detours and stops.
-    if !fitsTimeBudget(estimateExperience(durationSeconds: distanceMeters(request.start, destination) / 1.5, stopCount: 1).totalMinutes, request.minutes) {
+    if !fitsTimeBudget(estimateExperience(durationSeconds: distanceMeters(request.start, destination) / 1.5 / request.pace.speed, stopCount: 1).totalMinutes, request.minutes) {
       throw ProviderError("Your destination is too far away for this time budget. Choose a closer destination or a longer walk.")
     }
     return try await discoverTargetedPlaces(client, request)
@@ -55,12 +55,13 @@ public func generateLiveRoutes(_ client: GoogleClient, _ request: GenerateReques
       // Endpoint rules apply to every initial and adaptive request. Provider
       // duration includes the full return leg or selected destination leg.
       let routed = try await routeWalking(client, try routeWaypoints(candidate.stops, request), budget: budget)
-      let timing = estimateExperienceWithStops(durationSeconds: routed.durationSeconds, stops: candidate.stops)
+      // The provider times a walk; running covers the same path faster.
+      let timing = estimateExperienceWithStops(durationSeconds: routed.durationSeconds / request.pace.speed, stops: candidate.stops)
       let observation = Observation(seconds: routed.durationSeconds, meters: candidate.geographicMeters, totalMinutes: timing.totalMinutes)
       guard durationTimeFit(timing.totalMinutes, request.minutes) else { return Outcome(observation: observation) }
       let stops = candidate.stops
       let dominant = stops.sorted { a, b in
-        let pa = preferenceScore(a, request.mood), pb = preferenceScore(b, request.mood)
+        let pa = preferenceScore(a, request.moods), pb = preferenceScore(b, request.moods)
         return pa != pb ? pa > pb : a.baseScenicScore > b.baseScenicScore
       }[0]
       let suffix = request.mode == .loop ? "loop" : request.mode == .explore ? "wander" : "scenic route"
@@ -68,7 +69,7 @@ public func generateLiveRoutes(_ client: GoogleClient, _ request: GenerateReques
       let route = WanderRoute(id: UUID().uuidString, name: "\(dominant.name) \(suffix)", description: "Discover \(stops.map(\.name).joined(separator: " and "))\(ending)",
         geometry: routed.geometry, stops: stops, distanceMeters: routed.distanceMeters, walkingMinutes: timing.walkingMinutes, stopMinutes: timing.stopMinutes,
         bufferMinutes: timing.bufferMinutes, totalMinutes: timing.totalMinutes,
-        score: max(0, scorePlaces(stops, mood: request.mood, visitedIds: request.visitedIds) - repetitionPenalty(routed.geometry)),
+        score: max(0, scorePlaces(stops, moods: request.moods, visitedIds: request.visitedIds) - repetitionPenalty(routed.geometry)),
         highlights: stops.prefix(3).map(\.name), isLoop: request.mode == .loop, source: .live,
         destination: request.mode == .destination ? request.destination : nil, routingWarnings: routed.warnings)
       return Outcome(observation: observation, route: route)

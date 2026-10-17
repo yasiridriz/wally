@@ -6,7 +6,11 @@ export type LocationSearchResult = {
 /** Any whole minute from 5 to 180; see `src/lib/duration.ts`. */
 export type Duration = number;
 export type Mood = 'surprise' | 'scenic' | 'green' | 'historic' | 'hidden';
+/** A selectable tag. An empty selection means Surprise me. */
+export type MoodTag = Exclude<Mood, 'surprise'>;
+export const MOOD_TAGS: readonly MoodTag[] = ['scenic', 'green', 'historic', 'hidden'];
 export type RouteMode = 'destination' | 'loop' | 'explore';
+export type Pace = 'walk' | 'run';
 export type PlaceCategory = 'park' | 'viewpoint' | 'historic' | 'art' | 'attraction' | 'path';
 export type Attribution = { displayName: string; uri?: string };
 /** Google photo resource name; a short-lived image URL is fetched on demand. */
@@ -27,7 +31,7 @@ export type WanderRoute = {
   id: string; name: string; description: string; geometry: GeoJSON.LineString;
   stops: Place[]; distanceMeters: number; walkingMinutes: number; stopMinutes: number;
   bufferMinutes: number; totalMinutes: number; score: number; highlights: string[];
-  isLoop: boolean; source: 'live' | 'demo'; event?: Event; destination?: Coordinates;
+  isLoop: boolean; source: 'live' | 'demo'; pace?: Pace; event?: Event; destination?: Coordinates;
   routingWarnings?: string[];
   /** Validated start of the walk. */
   start?: Coordinates;
@@ -35,7 +39,9 @@ export type WanderRoute = {
   eventStopIndex?: number;
 };
 export type GenerateRequest = {
-  start: Coordinates; duration: Duration; mood: Mood; mode: RouteMode;
+  start: Coordinates; duration: Duration; moods: MoodTag[]; mode: RouteMode;
+  /** Running divides travel time by RUN_SPEED; omitted means walking. */
+  pace?: Pace;
   visitedIds: string[]; includeEvents: boolean; demo: boolean; destination?: Coordinates;
 };
 export type ActionResult<T> = { ok: true; data: T } | { ok: false; error: string; code: string };

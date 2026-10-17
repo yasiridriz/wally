@@ -29,7 +29,21 @@ public struct LocationSearchResult: Identifiable, Hashable, Sendable {
 }
 
 public enum WalkDuration: Int, CaseIterable, Codable, Sendable { case m15 = 15, m30 = 30, m45 = 45, m60 = 60, m90 = 90 }
-public enum Mood: String, CaseIterable, Codable, Sendable { case surprise, scenic, green, historic, hidden }
+public enum Mood: String, CaseIterable, Codable, Sendable {
+  case surprise, scenic, green, historic, hidden
+  /// The selectable tags. An empty selection means Surprise me.
+  public static let tags: [Mood] = [.scenic, .green, .historic, .hidden]
+  /// Keeps known tags once each, in the canonical tag order.
+  public static func normalized(_ moods: [Mood]) -> [Mood] { tags.filter { moods.contains($0) } }
+}
+/// Running covers ground 2.25x faster than walking (the middle of a 2–2.5x range).
+/// Travel time divides by `speed`; planned stop visits do not, so a running
+/// budget reaches further and plans longer routes.
+public enum Pace: String, CaseIterable, Codable, Sendable {
+  case walk, run
+  public static let runSpeed = 2.25
+  public var speed: Double { self == .run ? Pace.runSpeed : 1 }
+}
 /// The internal value for Targeted stays `destination`, like the web app.
 public enum RouteMode: String, CaseIterable, Codable, Sendable { case destination, loop, explore }
 public enum PlaceCategory: String, CaseIterable, Codable, Sendable { case park, viewpoint, historic, art, attraction, path }
@@ -114,14 +128,16 @@ public struct WanderRoute: Identifiable, Hashable, Sendable {
 public struct GenerateRequest: Hashable, Sendable {
   public var start: Coordinates
   public var duration: WalkDuration
-  public var mood: Mood
+  /// Selected mood tags; empty means Surprise me.
+  public var moods: [Mood]
   public var mode: RouteMode
+  public var pace: Pace
   public var visitedIds: [String]
   public var includeEvents: Bool
   public var demo: Bool
   public var destination: Coordinates?
-  public init(start: Coordinates, duration: WalkDuration, mood: Mood, mode: RouteMode, visitedIds: [String] = [], includeEvents: Bool = false, demo: Bool = false, destination: Coordinates? = nil) {
-    self.start = start; self.duration = duration; self.mood = mood; self.mode = mode; self.visitedIds = visitedIds
+  public init(start: Coordinates, duration: WalkDuration, moods: [Mood] = [], mode: RouteMode, pace: Pace = .walk, visitedIds: [String] = [], includeEvents: Bool = false, demo: Bool = false, destination: Coordinates? = nil) {
+    self.start = start; self.duration = duration; self.moods = Mood.normalized(moods); self.mode = mode; self.pace = pace; self.visitedIds = visitedIds
     self.includeEvents = includeEvents; self.demo = demo; self.destination = destination
   }
   public var minutes: Int { duration.rawValue }

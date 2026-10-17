@@ -6,6 +6,7 @@ import { routeWalking, type RoutingBudget } from "./routing";
 import { durationTimeFit, estimateExperience, estimateExperienceWithStops, fitsTimeBudget, preferenceScore, rankTimeMatchedRoutes, repetitionPenalty, scorePlaces } from "./scoring";
 import { chooseCandidate, loopCandidatePool, type ScenicCandidate } from "./loop-candidates";
 import { openCandidatePool } from "./open-candidates";
+import { paceSpeed } from "../pace";
 
 function routeWaypoints(stops: Place[], request: GenerateRequest): Coordinates[] {
   if (request.mode === "destination") {
@@ -38,7 +39,7 @@ async function discoverRoutePlaces(request: GenerateRequest): Promise<Place[]> {
   if (!isCoordinates(destination)) throw new Error("Choose a destination before finding a scenic route.");
   // An optimistic straight-line lower bound prevents wasting provider requests
   // when the fixed endpoint cannot fit even before network detours and stops.
-  if (!fitsTimeBudget(estimateExperience(distanceMeters(request.start, destination) / 1.5, 1).totalMinutes, request.duration)) {
+  if (!fitsTimeBudget(estimateExperience(distanceMeters(request.start, destination) / 1.5 / paceSpeed(request.pace), 1).totalMinutes, request.duration)) {
     throw new Error("Your destination is too far away for this time budget. Choose a closer destination or a longer walk.");
   }
   return discoverTargetedPlaces(request);
@@ -63,18 +64,19 @@ export async function generateLiveRoutes(request: GenerateRequest): Promise<Wand
       // Endpoint rules apply to every initial and adaptive request. Provider
       // duration includes the full return leg or selected destination leg.
       const routed = await routeWalking(routeWaypoints(candidate.stops, request), budget);
-      const timing = estimateExperienceWithStops(routed.durationSeconds, candidate.stops);
+      // The provider times a walk; running covers the same path faster.
+      const timing = estimateExperienceWithStops(routed.durationSeconds / paceSpeed(request.pace), candidate.stops);
       observed.push({ seconds: routed.durationSeconds, meters: candidate.geographicMeters, totalMinutes: timing.totalMinutes });
       if (!durationTimeFit(timing.totalMinutes, request.duration)) return;
       const stops = candidate.stops;
-      const dominant = [...stops].sort((a, b) => preferenceScore(b, request.mood) - preferenceScore(a, request.mood) || b.baseScenicScore - a.baseScenicScore)[0];
+      const dominant = [...stops].sort((a, b) => preferenceScore(b, request.moods) - preferenceScore(a, request.moods) || b.baseScenicScore - a.baseScenicScore)[0];
       const suffix = request.mode === "loop" ? "loop" : request.mode === "explore" ? "wander" : "scenic route";
       const ending = request.mode === "loop" ? ", then walk back to where you started." : request.mode === "explore" ? ", finishing somewhere new." : ", then arrive at your chosen destination.";
       routes.push({ id: crypto.randomUUID(), name: `${dominant.name} ${suffix}`,
         description: `Discover ${stops.map((place) => place.name).join(" and ")}${ending}`,
         geometry: routed.geometry, stops, distanceMeters: Math.round(routed.distanceMeters), ...timing,
-        score: Math.max(0, scorePlaces(stops, request.mood, request.visitedIds) - repetitionPenalty(routed.geometry)),
-        highlights: stops.slice(0, 3).map((place) => place.name), isLoop: request.mode === "loop", source: "live", routingWarnings: routed.warnings,
+        score: Math.max(0, scorePlaces(stops, request.moods, request.visitedIds) - repetitionPenalty(routed.geometry)),
+        highlights: stops.slice(0, 3).map((place) => place.name), isLoop: request.mode === "loop", source: "live", pace: request.pace ?? "walk", routingWarnings: routed.warnings,
         ...(request.mode === "destination" ? { destination: request.destination } : {}) });
     } catch (error) { lastError = error; }
   }

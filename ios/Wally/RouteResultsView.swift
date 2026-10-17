@@ -8,7 +8,7 @@ struct RouteResultsView: View {
   var body: some View {
     if model.loading {
       VStack(alignment: .leading, spacing: 0) {
-        Text("Finding walking routes…").wallyText(17, .semibold, .ink, tracking: -0.4).padding(.bottom, 15)
+        Text(model.preferences.pace == .run ? "Finding running routes…" : "Finding walking routes…").wallyText(17, .semibold, .ink, tracking: -0.4).padding(.bottom, 15)
         Text("Looking for interesting places and walkable paths…").wallyText(11, .regular, .muted)
         ForEach(0..<3, id: \.self) { _ in RouteSkeleton() }
       }
@@ -60,6 +60,7 @@ struct RouteSkeleton: View {
 }
 
 struct RouteCardView: View {
+  @Environment(AppModel.self) private var model
   var route: WanderRoute
   var index: Int
   var selected: Bool
@@ -89,7 +90,7 @@ struct RouteCardView: View {
           Label(kilometres(route.distanceMeters), systemImage: "shoeprints.fill")
           Label("\(route.stops.count) stops", systemImage: "mappin")
         }.labelStyle(StatLabel()).wallyText(11, .regular, Color(hex: 0x63745c)).padding(.top, 13)
-        Text("\(route.isLoop ? "Returns to start" : route.destination != nil ? "Finishes at your destination" : "Finishes at the last stop") · walking and stops included")
+        Text("\(route.isLoop ? "Returns to start" : route.destination != nil ? "Finishes at your destination" : "Finishes at the last stop") · \(model.preferences.pace == .run ? "running" : "walking") and stops included")
           .wallyText(11, .regular, Color(hex: 0x748465)).padding(.top, 8)
         FlowLayout(spacing: 4) {
           ForEach(Array(route.highlights.prefix(3)), id: \.self) { highlight in
@@ -116,7 +117,7 @@ struct ItineraryView: View {
   var body: some View {
     VStack(alignment: .leading, spacing: 0) {
       Text("Stops").wallyText(17, .semibold, .ink, tracking: -0.4).padding(.bottom, 15)
-      Label("\(route.walkingMinutes) min walking · \(route.stopMinutes) min at stops · \(route.bufferMinutes) min buffer", systemImage: "clock")
+      Label("\(route.walkingMinutes) min \(model.preferences.pace == .run ? "running" : "walking") · \(route.stopMinutes) min at stops · \(route.bufferMinutes) min buffer", systemImage: "clock")
         .labelStyle(StatLabel()).wallyText(11, .regular, Color(hex: 0x89917d)).padding(.top, -4)
       if route.stops.contains(where: { $0.suggestedActivity != nil }) {
         Text("Activities are suggestions. Check access and opening hours.").wallyText(11, .regular, Color(hex: 0x87917b)).padding(.top, 9)

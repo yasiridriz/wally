@@ -6,6 +6,8 @@ import { generateDemoRoutes, DEMO_START, DEMO_DESTINATION } from "@/lib/demo-dat
 import { registerGeneratedRoutes } from "@/lib/events";
 import { distanceMeters, isCoordinates } from "@/lib/geo/coordinates";
 import { isDuration } from "@/lib/duration";
+import { isMoodTag, normalizeMoods } from "@/lib/preferences";
+import { isPace, paceSpeed } from "@/lib/pace";
 import type { ActionResult, GenerateRequest, GenerateResponse } from "@/lib/types";
 
 function validate(raw: unknown): GenerateRequest | null {
@@ -13,11 +15,11 @@ function validate(raw: unknown): GenerateRequest | null {
   const input = raw as Record<string, unknown>;
   const start = input.start as Record<string, unknown> | undefined;
   if (!isCoordinates(start)) return null;
-  if (!isDuration(input.duration) || !["surprise", "scenic", "green", "historic", "hidden"].includes(input.mood as string) || !["destination", "loop", "explore"].includes(input.mode as string)) return null;
+  if (!isDuration(input.duration) || !Array.isArray(input.moods) || input.moods.length > 4 || !input.moods.every(isMoodTag) || (input.pace !== undefined && !isPace(input.pace)) || !["destination", "loop", "explore"].includes(input.mode as string)) return null;
   if (input.mode === "destination" && !isCoordinates(input.destination)) return null;
   if (typeof input.includeEvents !== "boolean" || typeof input.demo !== "boolean" || !Array.isArray(input.visitedIds) || input.visitedIds.length > 500 || !input.visitedIds.every((id) => typeof id === "string" && id.length > 0 && id.length <= 120)) return null;
   const destination = input.mode === "destination" ? input.destination as GenerateRequest["destination"] : undefined;
-  return { start: { lat: start.lat, lng: start.lng }, ...(destination ? { destination: { lat: destination.lat, lng: destination.lng } } : {}), duration: input.duration, mood: input.mood, mode: input.mode, visitedIds: [...new Set(input.visitedIds)], includeEvents: input.includeEvents, demo: input.demo } as GenerateRequest;
+  return { start: { lat: start.lat, lng: start.lng }, ...(destination ? { destination: { lat: destination.lat, lng: destination.lng } } : {}), duration: input.duration, moods: normalizeMoods(input.moods), mode: input.mode, pace: input.pace ?? "walk", visitedIds: [...new Set(input.visitedIds)], includeEvents: input.includeEvents, demo: input.demo } as GenerateRequest;
 }
 
 export async function generateRoutes(raw: unknown): Promise<ActionResult<GenerateResponse>> {
@@ -27,7 +29,7 @@ export async function generateRoutes(raw: unknown): Promise<ActionResult<Generat
     const separation = distanceMeters(request.start, request.destination);
     if (separation < 50) return { ok: false, error: "Choose a destination at least 50 metres from your start, or try a loop.", code: "INVALID_DESTINATION" };
     // A generous lower-bound screen prevents requests over implausibly large areas.
-    if (separation > request.duration * 90) return { ok: false, error: "That destination is too far for this walking budget. Choose somewhere closer or allow more time.", code: "DESTINATION_TOO_FAR" };
+    if (separation > request.duration * 90 * paceSpeed(request.pace)) return { ok: false, error: `That destination is too far for this ${request.pace === "run" ? "running" : "walking"} budget. Choose somewhere closer or allow more time.`, code: "DESTINATION_TOO_FAR" };
   }
   if (!request.demo && !process.env.GOOGLE_MAPS_API_KEY?.trim()) return { ok: false, error: "Live walks need a Google Maps server API key with Places API (New) and Routes API enabled. Select Demo Mode to try sample Edinburgh walks.", code: "MISSING_KEY" };
   try {

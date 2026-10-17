@@ -7,7 +7,7 @@ import { generateLiveRoutes, shortlistCandidates } from "./generate";
 import { discoverExplorePlaces, discoverLoopPlaces, discoverPlaces, discoverTargetedPlaces } from "./places";
 import { routeWalking } from "./routing";
 
-const request: GenerateRequest = { start: { lat: 55.95, lng: -3.19 }, duration: 30, mood: "surprise", mode: "loop", visitedIds: [], includeEvents: false, demo: false };
+const request: GenerateRequest = { start: { lat: 55.95, lng: -3.19 }, duration: 30, moods: [], mode: "loop", visitedIds: [], includeEvents: false, demo: false };
 const places: Place[] = Array.from({ length: 12 }, (_, index) => ({ id: `place-${index}`, name: `Place ${index}`, lat: 55.95 + .003 * Math.sin(index / 12 * Math.PI * 2), lng: -3.19 + .005 * Math.cos(index / 12 * Math.PI * 2), category: index % 2 ? "park" : "historic", baseScenicScore: 80 }));
 afterEach(() => vi.resetAllMocks());
 

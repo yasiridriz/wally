@@ -57,11 +57,13 @@ public func calculateEventDetours(_ client: GoogleClient, request: GenerateReque
     waypoints.insert(event.location, at: insertion)
     // A failed detour must never invalidate the user's original walk.
     guard let result = try? await routeWalking(client, waypoints, budget: budget), result.segmentSeconds.count == waypoints.count - 1 else { continue }
-    let walkingMinutes = Int((result.durationSeconds / 60).rounded(.up))
+    let speed = request.pace.speed
+    let walkingMinutes = Int((result.durationSeconds / speed / 60).rounded(.up))
     let bufferMinutes = max(2, Int((Double(walkingMinutes) * 0.1).rounded(.up)))
-    let arrivalMinutes = Int((result.segmentSeconds.prefix(insertion).reduce(0, +) / 60).rounded(.up)) + estimateStopMinutes(Array(route.stops.prefix(insertion - 1)))
+    let arrivalMinutes = Int((result.segmentSeconds.prefix(insertion).reduce(0, +) / speed / 60).rounded(.up)) + estimateStopMinutes(Array(route.stops.prefix(insertion - 1)))
     guard let timing = evaluateEventTiming(walkingMinutes: walkingMinutes, stopMinutes: route.stopMinutes, bufferMinutes: bufferMinutes, arrivalMinutes: arrivalMinutes, event: event, departure: departure, budgetMinutes: request.minutes) else { continue }
-    let relevance: Double = request.mood == .surprise ? 80 : request.mood == .historic && event.category == "history" ? 100 : request.mood == .hidden && ["art", "music"].contains(event.category) ? 100 : 60
+    let relevance: Double = request.moods.isEmpty ? 80
+      : (request.moods.contains(.historic) && event.category == "history") || (request.moods.contains(.hidden) && ["art", "music"].contains(event.category)) ? 100 : 60
     var modified = route
     modified.event = event
     modified.eventStopIndex = insertion - 1
@@ -75,7 +77,7 @@ public func calculateEventDetours(_ client: GoogleClient, request: GenerateReque
     modified.totalMinutes = timing.totalMinutes
     modified.description = "\(route.description) Includes a fictional sample event (\(event.visitMinutes) minutes\(timing.waitMinutes > 0 ? ", plus \(timing.waitMinutes) minutes waiting" : ""))."
     modified.highlights = Array(route.highlights.prefix(2)) + ["Fictional sample event"]
-    modified.score = max(0, scorePlaces(route.stops, mood: request.mood, visitedIds: request.visitedIds, eventRelevance: relevance) - repetitionPenalty(result.geometry))
+    modified.score = max(0, scorePlaces(route.stops, moods: request.moods, visitedIds: request.visitedIds, eventRelevance: relevance) - repetitionPenalty(result.geometry))
     modified.routingWarnings = result.warnings
     options.append(DetourOption(id: modified.id, event: event, route: modified, additionalMinutes: max(0, modified.totalMinutes - route.totalMinutes),
       additionalDistanceMeters: max(0, modified.distanceMeters - route.distanceMeters), arrivalTime: timing.arrivalTime))
