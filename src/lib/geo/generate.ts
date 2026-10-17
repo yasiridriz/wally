@@ -1,6 +1,6 @@
 import "server-only";
 import type { Coordinates, GenerateRequest, Place, WanderRoute } from "../types";
-import { distanceMeters, isCoordinates } from "./coordinates";
+import { distanceMeters, isCoordinates, searchRadius } from "./coordinates";
 import { discoverExplorePlaces, discoverLoopPlaces, discoverTargetedPlaces } from "./places";
 import { routeWalking, type RoutingBudget } from "./routing";
 import { durationTimeFit, estimateExperience, estimateExperienceWithStops, fitsTimeBudget, preferenceScore, rankTimeMatchedRoutes, repetitionPenalty, scorePlaces } from "./scoring";
@@ -20,26 +20,15 @@ function candidatePool(places: Place[], request: GenerateRequest): ScenicCandida
   return request.mode === "loop" ? loopCandidatePool(places, request) : openCandidatePool(places, request);
 }
 
-export function shortlistCandidates(places: Place[], request: GenerateRequest): Place[][] {
-  if (request.mode === "destination" && !isCoordinates(request.destination)) throw new Error("Choose a destination before finding a scenic route.");
-  const pool = candidatePool(places, request);
-  const selected: ScenicCandidate[] = [];
-  for (let index = 0; index < 6; index++) {
-    const candidate = chooseCandidate(pool, request, selected);
-    if (!candidate) break;
-    selected.push(candidate);
-  }
-  return selected.map((candidate) => candidate.stops);
-}
-
 async function discoverRoutePlaces(request: GenerateRequest): Promise<Place[]> {
   if (request.mode === "loop") return discoverLoopPlaces(request);
   if (request.mode === "explore") return discoverExplorePlaces(request);
   const destination = request.destination;
   if (!isCoordinates(destination)) throw new Error("Choose a destination before finding a scenic route.");
+
   // An optimistic straight-line lower bound prevents wasting provider requests
   // when the fixed endpoint cannot fit even before network detours and stops.
-  if (!fitsTimeBudget(estimateExperience(distanceMeters(request.start, destination) / 1.5 / paceSpeed(request.pace), 1).totalMinutes, request.duration)) {
+  if (request.mode !== "destination" && !fitsTimeBudget(estimateExperience(distanceMeters(request.start, destination) / 1.5 / paceSpeed(request.pace), 1).totalMinutes, request.duration)) {
     throw new Error("Your destination is too far away for this time budget. Choose a closer destination or a longer walk.");
   }
   return discoverTargetedPlaces(request);
@@ -47,10 +36,20 @@ async function discoverRoutePlaces(request: GenerateRequest): Promise<Place[]> {
 
 export async function generateLiveRoutes(request: GenerateRequest): Promise<WanderRoute[]> {
   const places = await discoverRoutePlaces(request);
-  if (places.length < (request.mode === "destination" ? 1 : 2)) throw new Error(request.mode === "destination" ? "No interesting mapped stops were found toward your destination. Try a different destination or a longer walk." : "Not enough mapped places nearby. Try a different start, a longer walk, or Demo Mode.");
+  if (places.length < (request.mode === "destination" ? 1 : 2)) {
+    throw new Error(request.mode === "destination" ? "No interesting mapped stops were found toward your destination. Try a different destination or a longer walk." : "Not enough mapped places nearby. Try a different start, a longer walk, or Demo Mode.");
+  }
+
   const pool = candidatePool(places, request);
   const modeName = request.mode === "loop" ? "loop" : request.mode === "explore" ? "Explore walk" : "Targeted walk";
-  if (!pool.length) throw new Error(`No ${modeName} close to ${request.duration} minutes could be planned from nearby scenic stops. Try another start or duration.`);
+
+  if (!pool.length) {
+    if (request.mode === "destination") {
+      throw new Error("No scenic stops fit on the way to your destination within this budget. Try a longer walk or a closer destination.");
+    }
+    throw new Error(`No ${modeName} close to ${request.duration} minutes could be planned from nearby scenic stops. Try another start or duration.`);
+  }
+
   const budget: RoutingBudget = { remaining: 8, rateLimited: false };
   const attempted: ScenicCandidate[] = [];
   const routes: WanderRoute[] = [];
@@ -61,23 +60,48 @@ export async function generateLiveRoutes(request: GenerateRequest): Promise<Wand
     if (budget.remaining <= 0 || budget.rateLimited) return;
     attempted.push(candidate);
     try {
-      // Endpoint rules apply to every initial and adaptive request. Provider
-      // duration includes the full return leg or selected destination leg.
       const routed = await routeWalking(routeWaypoints(candidate.stops, request), budget);
-      // The provider times a walk; running covers the same path faster.
       const timing = estimateExperienceWithStops(routed.durationSeconds / paceSpeed(request.pace), candidate.stops);
       observed.push({ seconds: routed.durationSeconds, meters: candidate.geographicMeters, totalMinutes: timing.totalMinutes });
-      if (!durationTimeFit(timing.totalMinutes, request.duration)) return;
+
+      const fits = durationTimeFit(timing.totalMinutes, request.duration);
+      let overBudgetMins = 0;
+
+      if (!fits) {
+        if (request.mode === 'destination') {
+          overBudgetMins = Math.round(timing.totalMinutes - request.duration);
+        } else {
+          return; // Skip non-destination routes that exceed time budget
+        }
+      }
+
       const stops = candidate.stops;
       const dominant = [...stops].sort((a, b) => preferenceScore(b, request.moods) - preferenceScore(a, request.moods) || b.baseScenicScore - a.baseScenicScore)[0];
       const suffix = request.mode === "loop" ? "loop" : request.mode === "explore" ? "wander" : "scenic route";
       const ending = request.mode === "loop" ? ", then walk back to where you started." : request.mode === "explore" ? ", finishing somewhere new." : ", then arrive at your chosen destination.";
-      routes.push({ id: crypto.randomUUID(), name: `${dominant.name} ${suffix}`,
-        description: `Discover ${stops.map((place) => place.name).join(" and ")}${ending}`,
-        geometry: routed.geometry, stops, distanceMeters: Math.round(routed.distanceMeters), ...timing,
+
+      routes.push({
+        id: crypto.randomUUID(),
+        name: `${dominant.name} ${suffix}`,
+        description: `Discover ${stops.map((place) => place.name).join(" and ")}${ending}${!fits ? ` Note: Exceeds preferred time by ${overBudgetMins} minutes.` : ""}`,
+        geometry: routed.geometry,
+        stops,
+        distanceMeters: Math.round(routed.distanceMeters),
+        ...timing,
         score: Math.max(0, scorePlaces(stops, request.moods, request.visitedIds) - repetitionPenalty(routed.geometry)),
-        highlights: stops.slice(0, 3).map((place) => place.name), isLoop: request.mode === "loop", source: "live", pace: request.pace ?? "walk", routingWarnings: routed.warnings,
-        ...(request.mode === "destination" ? { destination: request.destination } : {}) });
+        highlights: stops.slice(0, 3).map((place) => place.name),
+        isLoop: request.mode === "loop",
+        source: "live",
+        pace: request.pace ?? "walk",
+        routingWarnings: [
+          ...(routed.warnings || []),
+          ...(!fits ? [`Exceeds selected budget by ${overBudgetMins} mins`] : [])
+        ],
+        exceedsBudget: !fits,
+        budgetMinutes: request.duration,
+        overBudgetMinutes: overBudgetMins,
+        ...(request.mode === "destination" ? { destination: request.destination } : {})
+      });
     } catch (error) { lastError = error; }
   }
 
@@ -86,14 +110,15 @@ export async function generateLiveRoutes(request: GenerateRequest): Promise<Wand
     const candidate = chooseCandidate(pool, request, initial, 1, target);
     if (candidate) initial.push(candidate);
   }
+
   let next = 0;
   async function worker() {
-    while (next < initial.length && budget.remaining > 0 && !budget.rateLimited) await calculate(initial[next++]);
+    while (next < initial.length && budget.remaining > 0 && !budget.rateLimited) {
+      await calculate(initial[next++]);
+    }
   }
   await Promise.all([worker(), worker()]);
 
-  // Measured network timing selects two untried combinations. The same bounded
-  // calibration applies to all modes; no waiting time is invented to fill a budget.
   for (let index = 0; index < 2 && budget.remaining > 0 && !budget.rateLimited; index++) {
     const ratios = observed.map((value) => value.seconds / value.meters).filter((ratio) => Number.isFinite(ratio) && ratio > 0).sort((a, b) => a - b);
     const secondsPerMeter = ratios.length ? ratios[Math.floor(ratios.length / 2)] : 1;
@@ -101,6 +126,7 @@ export async function generateLiveRoutes(request: GenerateRequest): Promise<Wand
     if (!candidate) break;
     await calculate(candidate);
   }
+
   if (!routes.length) {
     if (!observed.length && lastError instanceof Error) throw lastError;
     const totals = observed.map((value) => value.totalMinutes).sort((a, b) => a - b);
@@ -108,5 +134,6 @@ export async function generateLiveRoutes(request: GenerateRequest): Promise<Wand
     const detail = totals.length ? ` Verified ${verifiedLabel} ranged from ${totals[0]} to ${totals[totals.length - 1]} minutes.` : "";
     throw new Error(`No ${modeName} close to ${request.duration} minutes fits your budget.${detail} Try another start or duration.`);
   }
+
   return rankTimeMatchedRoutes(routes, request.duration);
 }

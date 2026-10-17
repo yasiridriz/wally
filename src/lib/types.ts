@@ -37,6 +37,10 @@ export type WanderRoute = {
   start?: Coordinates;
   /** Count of stops visited before the event on a detour route. */
   eventStopIndex?: number;
+  /** Over-budget metadata flags for deep maroon fallback styling */
+  exceedsBudget?: boolean;
+  budgetMinutes?: number;
+  overBudgetMinutes?: number;
 };
 export type GenerateRequest = {
   start: Coordinates; duration: Duration; moods: MoodTag[]; mode: RouteMode;

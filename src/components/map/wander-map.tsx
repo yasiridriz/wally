@@ -3,7 +3,7 @@
 import { useEffect, useRef, useState } from "react";
 import { Compass, Info, Minus, Plus, X } from "lucide-react";
 import type { Coordinates, Event, WanderRoute } from "@/lib/types";
-import { routeColor } from "../route-card";
+import { routeColor, ROUTE_COLORS, OVER_BUDGET_COLOR } from "../route-card";
 import type { PickTarget } from "../use-planner";
 import { loadGoogleMaps } from "./google-maps-loader";
 import SampleRoutePreview from "./sample-route-preview";
@@ -70,20 +70,31 @@ export default function WanderMap(props: Props) {
     const lines: google.maps.Polyline[] = [];
     const markers: google.maps.marker.AdvancedMarkerElement[] = [];
     const selectedIndex = props.routes.findIndex(route => route.id === props.selected?.id);
+
     props.routes.forEach((route, index) => {
       if (index === selectedIndex) return;
-      const line = new google.maps.Polyline({ map: currentMap, path: route.geometry.coordinates.map(([lng, lat]) => ({ lat, lng })), zIndex: 1, clickable: true, ...lineOptions(route, routeColor(index), 3, .4) });
+      const color = route.exceedsBudget ? OVER_BUDGET_COLOR : routeColor(index, route.exceedsBudget);
+      const line = new google.maps.Polyline({
+        map: currentMap,
+        path: route.geometry.coordinates.map(([lng, lat]) => ({ lat, lng })),
+        zIndex: 1,
+        clickable: true,
+        ...lineOptions(route, color, 3, .4)
+      });
       line.addListener("click", () => props.onSelectRoute(route.id));
       lines.push(line);
     });
+
     const selected = props.selected;
-    const color = routeColor(Math.max(0, selectedIndex));
+    const selectedColor = selected ? (selected.exceedsBudget ? OVER_BUDGET_COLOR : routeColor(Math.max(0, selectedIndex), selected.exceedsBudget)) : ROUTE_COLORS[0];
+
     if (selected) {
       const path = selected.geometry.coordinates.map(([lng, lat]) => ({ lat, lng }));
       // A light outline under the selected line keeps it readable on any base map.
       lines.push(new google.maps.Polyline({ map: currentMap, path, zIndex: 3, clickable: false, ...lineOptions(selected, SURFACE, selected.source === "demo" ? 8 : 9, .95) }));
-      lines.push(new google.maps.Polyline({ map: currentMap, path, zIndex: 4, clickable: false, ...lineOptions(selected, color, 5, 1) }));
+      lines.push(new google.maps.Polyline({ map: currentMap, path, zIndex: 4, clickable: false, ...lineOptions(selected, selectedColor, 5, 1) }));
     }
+
     function addMarker(position: Coordinates, className: string, title: string, content?: string, html = false, style?: Partial<CSSStyleDeclaration>) {
       const element = document.createElement("div");
       element.className = className;
@@ -91,16 +102,18 @@ export default function WanderMap(props: Props) {
       if (style) Object.assign(element.style, style);
       markers.push(new google.maps.marker.AdvancedMarkerElement({ map: currentMap, position, title, content: element }));
     }
+
     if (props.start) addMarker(props.start, "marker-start", props.startLabel || "Start");
     const endpoint = selected?.destination || props.destination;
     if (endpoint) addMarker(endpoint, "marker-finish", "Finish", FLAG, true);
+
     selected?.stops.forEach((stop, index) => {
       const finish = !selected.isLoop && !selected.destination && index === selected.stops.length - 1;
-      addMarker(stop, `marker-stop ${finish ? "finish" : ""}`, finish ? `${stop.name} · finish` : stop.name, String(index + 1), false, finish ? undefined : { borderColor: color, color });
+      addMarker(stop, `marker-stop ${finish ? "finish" : ""}`, finish ? `${stop.name} · finish` : stop.name, String(index + 1), false, finish ? undefined : { borderColor: selectedColor, color: selectedColor });
     });
+
     if (props.event) addMarker(props.event.location, "marker-event", `Fictional sample event: ${props.event.name}`, "E");
     return () => { lines.forEach(line => line.setMap(null)); markers.forEach(marker => { marker.map = null; }); };
-    // onSelectRoute is stable in intent; redrawing for each new function would flicker.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [ready, props.start, props.startLabel, props.destination, props.routes, props.selected, props.event]);
 
@@ -134,6 +147,8 @@ export default function WanderMap(props: Props) {
   if (!hasBrowserKey) return <SampleRoutePreview start={props.start ?? props.initialCenter} routes={props.routes} selected={props.selected} />;
   const showSampleFallback = Boolean(error) && (!props.selected || props.selected.source === "demo");
   const selectedIndex = props.routes.findIndex(route => route.id === props.selected?.id);
+  const activeColor = props.selected ? (props.selected.exceedsBudget ? OVER_BUDGET_COLOR : routeColor(Math.max(0, selectedIndex), props.selected.exceedsBudget)) : ROUTE_COLORS[0];
+
   return <div className={`google-map-frame ${picking ? "picking" : ""}`}>
     <div ref={container} className={`wander-map ${showSampleFallback ? "failed-map" : ""}`} aria-label="Interactive Google Maps walking route map" />
     {showSampleFallback ? <div className="schematic-fallback"><SampleRoutePreview start={props.start ?? props.initialCenter} routes={props.routes} selected={props.selected} /></div> : null}
@@ -141,7 +156,7 @@ export default function WanderMap(props: Props) {
     {error ? <div className={`map-error ${showSampleFallback ? "has-schematic" : ""}`} role="alert"><Info size={18} /><div><strong>Map unavailable</strong><p>{error}</p><small>Demo routes remain available from the planner. Refresh after updating your Google Maps setup.</small></div></div> : null}
     {hint}
     {!props.compact && props.selected ? <div className="map-legend">
-      <span className="legend-row"><span className={`legend-swatch ${props.selected.source === "demo" ? "dotted" : ""}`} style={{ "--route-color": routeColor(Math.max(0, selectedIndex)) } as React.CSSProperties} />{props.selected.name}</span>
+      <span className="legend-row"><span className={`legend-swatch ${props.selected.source === "demo" ? "dotted" : ""}`} style={{ "--route-color": activeColor } as React.CSSProperties} />{props.selected.name}</span>
       {props.routes.length > 1 ? <span className="legend-row muted"><span className="legend-swatch faded" />Other options</span> : null}
       {props.selected.source === "demo" ? <span className="legend-note">Sample data · paths are illustrative</span> : null}
     </div> : null}
