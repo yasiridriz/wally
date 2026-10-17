@@ -22,6 +22,9 @@ export type WanderRoute = {
   bufferMinutes: number; totalMinutes: number; score: number; highlights: string[];
   isLoop: boolean; source: 'live' | 'demo'; event?: Event; destination?: Coordinates;
   routingWarnings?: string[];
+  exceedsBudget?: boolean;
+  budgetMinutes?: number;
+  overBudgetMinutes?: number;
 };
 export type GenerateRequest = {
   start: Coordinates; duration: Duration; mood: Mood; mode: RouteMode;

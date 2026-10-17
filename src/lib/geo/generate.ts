@@ -37,7 +37,7 @@ async function discoverRoutePlaces(request: GenerateRequest): Promise<Place[]> {
   const directDistance = distanceMeters(request.start, destination);
   // An optimistic lower bound avoids spending discovery/routing requests on an
   // endpoint that cannot fit even before network detours and a scenic stop.
-  if (!fitsTimeBudget(estimateExperience(directDistance / 1.5, 1).totalMinutes, request.duration)) {
+  if (request.mode !== "destination" && !fitsTimeBudget(estimateExperience(directDistance / 1.5, 1).totalMinutes, request.duration)) {
     throw new Error("Your destination is too far away for this time budget. Choose a closer destination or a longer walk.");
   }
   const middleLongitude = request.start.lng + longitudeDelta(request.start.lng, destination.lng) / 2;
@@ -69,19 +69,30 @@ export function shortlistCandidates(places: Place[], request: GenerateRequest): 
   if (request.mode === "destination" && !isCoordinates(request.destination)) throw new Error("Choose a destination before finding a scenic route.");
   const available = places.filter((place) => distanceMeters(request.start, place) > 35 && (request.mode !== "destination" || distanceMeters(request.destination!, place) > 35)).slice(0, 20);
   const candidates: Candidate[] = [];
+
   function add(stops: Place[]) {
     const ordered = request.mode === "destination" ? [...stops].sort((a, b) => destinationProgress(a, request) - destinationProgress(b, request)) : stops;
     const points = routeWaypoints(ordered, request);
+
     // Straight-line distance is a shortlist heuristic only; actual walking determines eligibility.
     const estimate = estimateExperience(pathDistance(points) * 1.3 / 1.15, stops.length);
-    if (estimate.totalMinutes > request.duration || pathDistance(points) < 180) return;
+
+    // 👉 Allow over-budget candidate shortlisting specifically for Destination mode
+    if (request.mode !== "destination" && estimate.totalMinutes > request.duration) return;
+    if (pathDistance(points) < 180) return;
+
     const scenic = scorePlaces(stops, request.mood, request.visitedIds);
     const utilisation = estimate.totalMinutes / request.duration;
-    candidates.push({ stops: ordered, merit: scenic + 25 * utilisation + stops.reduce((sum, place) => sum + preferenceScore(place, request.mood), 0) / stops.length * .1 });
+
+    candidates.push({
+      stops: ordered,
+      merit: scenic + 25 * utilisation + stops.reduce((sum, place) => sum + preferenceScore(place, request.mood), 0) / stops.length - 0.1
+    });
   }
-  // A single interesting stop is useful when a fixed destination leaves little
-  // spare time. Destination mode never silently becomes an unsignposted direct walk.
+
+  // A single interesting stop is useful when a fixed destination leaves little spare time.
   if (request.mode === "destination") available.forEach((place) => add([place]));
+
   for (let a = 0; a < available.length; a++) {
     for (let b = a + 1; b < available.length; b++) {
       if (distanceMeters(available[a], available[b]) < 65) continue;
@@ -89,11 +100,12 @@ export function shortlistCandidates(places: Place[], request: GenerateRequest): 
       add(pair);
       if (request.duration >= 45) {
         const third = available.filter((place) => !pair.includes(place) && pair.every((other) => distanceMeters(place, other) > 65))
-          .sort((x, y) => distanceMeters(pair[1], x) - distanceMeters(pair[1], y))[0];
+            .sort((x, y) => distanceMeters(pair[1], x) - distanceMeters(pair[1], y))[0];
         if (third) add([...pair, third]);
       }
     }
   }
+
   const selected: Candidate[] = [];
   while (candidates.length && selected.length < 6) {
     candidates.sort((a, b) => {
@@ -103,6 +115,7 @@ export function shortlistCandidates(places: Place[], request: GenerateRequest): 
     const next = candidates.shift()!;
     if (!selected.some((other) => stopOverlap(next.stops, other.stops) === 1)) selected.push(next);
   }
+
   return selected.map((candidate) => candidate.stops);
 }
 
@@ -123,13 +136,41 @@ export async function generateLiveRoutes(request: GenerateRequest): Promise<Wand
       try {
         const routed = await routeWalking(waypoints, budget);
         const timing = estimateExperience(routed.durationSeconds, stops.length);
-        if (!fitsTimeBudget(timing.totalMinutes, request.duration)) continue;
+
+        const fits = fitsTimeBudget(timing.totalMinutes, request.duration);
+        let overBudgetMins = 0;
+
+        if (!fits) {
+          if (request.mode === 'destination') {
+            overBudgetMins = Math.round(timing.totalMinutes - request.duration);
+          } else {
+            continue;
+          }
+        }
+
         const dominant = [...stops].sort((a, b) => preferenceScore(b, request.mood) - preferenceScore(a, request.mood) || b.baseScenicScore - a.baseScenicScore)[0];
-        routes.push({ id: crypto.randomUUID(), name: `${dominant.name} ${request.mode === "loop" ? "loop" : request.mode === "destination" ? "scenic route" : "wander"}`,
-          description: `Discover ${stops.map((place) => place.name).join(" and ")}${request.mode === "loop" ? ", then return to where you started." : request.mode === "destination" ? ", then arrive at your chosen destination." : ", finishing somewhere new."}`,
-          geometry: routed.geometry, stops, distanceMeters: Math.round(routed.distanceMeters), ...timing,
+        routes.push({
+          id: crypto.randomUUID(),
+          name: `${dominant.name} ${request.mode === 'loop' ? "loop" : request.mode === 'destination' ? "scenic route" : "wander"}`,
+          description: `Discover ${stops.map((place) => place.name).join(" and ")}.${!fits ? ` Note: This route exceeds your preferred time budget by ${overBudgetMins} minutes.` : ""}`,
+          geometry: routed.geometry,
+          stops,
+          distanceMeters: Math.round(routed.distanceMeters),
+          ...timing,
           score: Math.max(0, scorePlaces(stops, request.mood, request.visitedIds) - repetitionPenalty(routed.geometry)),
-          highlights: stops.slice(0, 3).map((place) => place.name), isLoop: request.mode === "loop", source: "live", routingWarnings: routed.warnings, ...(request.mode === "destination" ? { destination: request.destination } : {}) });
+          highlights: stops.slice(0, 3).map((place) => place.name),
+          isLoop: request.mode === 'loop',
+          source: "live",
+          routingWarnings: [
+            ...(routed.warnings || []),
+            ...(!fits ? [`Exceeds selected budget by ${overBudgetMins} mins`] : [])
+          ],
+          // Over-budget metadata flags for UI / Map renderer
+          exceedsBudget: !fits,
+          budgetMinutes: request.duration,
+          overBudgetMinutes: overBudgetMins,
+          ...(request.mode === "destination" ? { destination: request.destination } : {})
+        });
       } catch (error) { lastError = error; }
     }
   }

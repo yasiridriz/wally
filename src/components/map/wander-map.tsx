@@ -3,7 +3,7 @@
 import { useEffect, useRef, useState } from "react";
 import { Compass, Info } from "lucide-react";
 import type { Coordinates, Event, WanderRoute } from "@/lib/types";
-import { ROUTE_COLORS } from "../route-card";
+import { ROUTE_COLORS, OVER_BUDGET_COLOR } from "../route-card";
 import { loadGoogleMaps } from "./google-maps-loader";
 import SampleRoutePreview from "./sample-route-preview";
 
@@ -49,7 +49,8 @@ export default function WanderMap(props: Props) {
     const currentMap = map.current;
     const polylines = props.routes.map((route, index) => new google.maps.Polyline({
       map: currentMap, path: route.geometry.coordinates.map(([lng, lat]) => ({ lat, lng })),
-      strokeColor: ROUTE_COLORS[index % ROUTE_COLORS.length], strokeWeight: route.id === props.selected?.id ? 6 : 3,
+      strokeColor: route.exceedsBudget ? OVER_BUDGET_COLOR : ROUTE_COLORS[index % ROUTE_COLORS.length],
+      strokeWeight: route.id === props.selected?.id ? 6 : 3,
       strokeOpacity: route.id === props.selected?.id ? .95 : .35, zIndex: route.id === props.selected?.id ? 2 : 1,
     }));
     const markers: google.maps.marker.AdvancedMarkerElement[] = [];
