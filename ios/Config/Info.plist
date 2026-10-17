@@ -1,0 +1,12 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+	<key>WallyGoogleMapsSDKKey</key>
+	<string>$(WALLY_GOOGLE_MAPS_SDK_KEY)</string>
+	<key>WallyGooglePlacesRoutesKey</key>
+	<string>$(WALLY_GOOGLE_PLACES_ROUTES_KEY)</string>
+	<key>WallyGoogleMapsMapID</key>
+	<string>$(WALLY_GOOGLE_MAPS_MAP_ID)</string>
+</dict>
+</plist>

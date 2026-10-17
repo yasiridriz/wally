@@ -1,6 +1,7 @@
 import "server-only";
 import type { Coordinates, GenerateRequest, Place, PlacePhotoRef } from "../types";
 import { distanceMeters, isCoordinates, searchRadius } from "./coordinates";
+import { isDuration } from "../duration";
 
 const INCLUDED_TYPES = ["park", "botanical_garden", "tourist_attraction", "historical_landmark", "monument", "museum", "art_gallery", "observation_deck"];
 // Photos share the Nearby Search Pro tier with displayName, so they add no request cost.
@@ -150,7 +151,7 @@ function mergePlaceGroups(groups: Place[][], accepts: (place: Place) => boolean)
 }
 
 export async function discoverLoopPlaces(request: GenerateRequest): Promise<Place[]> {
-  if (!isCoordinates(request.start) || ![15, 30, 45, 60, 90].includes(request.duration)) throw new Error("Invalid loop discovery area or duration.");
+  if (!isCoordinates(request.start) || !isDuration(request.duration)) throw new Error("Invalid loop discovery area or duration.");
   const radius = searchRadius(request.duration, true);
   const ringDistance = radius * 0.75;
   const outerRadius = Math.round(Math.max(700, Math.min(1100, radius * 0.4)));
@@ -198,7 +199,7 @@ async function queryAreas(queries: DiscoveryQuery[]): Promise<Place[][]> {
 }
 
 export async function discoverExplorePlaces(request: GenerateRequest): Promise<Place[]> {
-  if (!isCoordinates(request.start) || ![15, 30, 45, 60, 90].includes(request.duration)) throw new Error("Invalid exploration area or duration.");
+  if (!isCoordinates(request.start) || !isDuration(request.duration)) throw new Error("Invalid exploration area or duration.");
   const radius = searchRadius(request.duration, false);
   const outerRadius = Math.round(Math.max(700, Math.min(1400, radius * 0.4)));
   const queries: DiscoveryQuery[] = [
@@ -220,7 +221,7 @@ function initialBearing(start: Coordinates, end: Coordinates): number {
 
 export async function discoverTargetedPlaces(request: GenerateRequest): Promise<Place[]> {
   const destination = request.destination;
-  if (!isCoordinates(request.start) || !isCoordinates(destination) || ![15, 30, 45, 60, 90].includes(request.duration)) throw new Error("Choose a valid starting point, destination and duration before discovering places.");
+  if (!isCoordinates(request.start) || !isCoordinates(destination) || !isDuration(request.duration)) throw new Error("Choose a valid starting point, destination and duration before discovering places.");
   const directDistance = distanceMeters(request.start, destination);
   // This generous geographic envelope is only a discovery filter. Actual
   // walking, stop visits and the safety buffer determine route eligibility.

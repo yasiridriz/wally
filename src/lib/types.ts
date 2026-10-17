@@ -3,7 +3,8 @@ export type LocationSearchResult = {
   id: string; name: string; address: string; coordinates: Coordinates;
   attributions?: { displayName: string; uri?: string }[];
 };
-export type Duration = 15 | 30 | 45 | 60 | 90;
+/** Any whole minute from 5 to 180; see `src/lib/duration.ts`. */
+export type Duration = number;
 export type Mood = 'surprise' | 'scenic' | 'green' | 'historic' | 'hidden';
 export type RouteMode = 'destination' | 'loop' | 'explore';
 export type PlaceCategory = 'park' | 'viewpoint' | 'historic' | 'art' | 'attraction' | 'path';

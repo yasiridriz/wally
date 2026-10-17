@@ -1,46 +1,95 @@
 "use client";
 
 import { useEffect, useId, useRef, useState } from "react";
-import { Check, Search, X } from "lucide-react";
+import { Loader2, X } from "lucide-react";
 import { searchLocations } from "@/app/actions/search-locations";
 import type { Coordinates, LocationSearchResult } from "@/lib/types";
 
-export default function LocationSearch({ label, selectedLabel, selectedAddress, hasSelection, near, disabled, onSelect, onClear }: {
-  label: string; selectedLabel: string; selectedAddress?: string; hasSelection: boolean; near?: Coordinates; disabled: boolean;
-  onSelect: (result: LocationSearchResult) => void; onClear: () => void;
-}) {
-  const inputId = useId();
-  const [query, setQuery] = useState("");
-  const [results, setResults] = useState<LocationSearchResult[]>([]);
-  const [loading, setLoading] = useState(false);
-  const [error, setError] = useState("");
-  const [searched, setSearched] = useState(false);
-  const version = useRef(0);
-  useEffect(() => () => { version.current++; }, []);
+type Status = "idle" | "loading" | "done" | "error";
+const DEBOUNCE_MS = 400;
+// Session-only cache: repeating a query makes no new Places request. Nothing is persisted.
+const cache = new Map<string, LocationSearchResult[]>();
+const normalise = (text: string) => text.trim().replace(/\s+/g, " ");
 
-  function clearSearch() { version.current++; setQuery(""); setResults([]); setError(""); setSearched(false); setLoading(false); }
-  async function search(event: React.FormEvent<HTMLFormElement>) {
-    event.preventDefault();
-    if (disabled || loading) return;
-    const text = query.trim().replace(/\s+/g, " ");
-    if (text.length < 3) { setError("Enter at least three characters, such as a place name and city."); return; }
+/** A place combobox: 3+ characters search after a pause; ↑ ↓ move, Enter selects, Escape closes. */
+export default function LocationSearch({ label, placeholder, value, selected, near, disabled, compact = false, onValueChange, onSelect, onClear, adornment }: {
+  label: string; placeholder: string; value: string; selected: boolean; near?: Coordinates; disabled?: boolean; compact?: boolean;
+  onValueChange: (text: string) => void; onSelect: (result: LocationSearchResult) => void; onClear: () => void; adornment?: React.ReactNode;
+}) {
+  const listId = useId();
+  const inputId = useId();
+  const [open, setOpen] = useState(false);
+  const [results, setResults] = useState<LocationSearchResult[]>([]);
+  const [status, setStatus] = useState<Status>("idle");
+  const [error, setError] = useState("");
+  const [active, setActive] = useState(-1);
+  const version = useRef(0);
+  const query = normalise(value);
+  const searchable = !selected && query.length >= 3;
+  const nearKey = near ? `${near.lat.toFixed(2)},${near.lng.toFixed(2)}` : "";
+
+  useEffect(() => {
+    if (!searchable || disabled) return;
     const request = ++version.current;
-    setLoading(true); setError(""); setSearched(false); setResults([]);
-    try {
-      const response = await searchLocations({ query: text, ...(near ? { near } : {}) });
-      if (request !== version.current) return;
-      if (response.ok) { setResults(response.data); setSearched(true); }
-      else setError(response.error);
-    } catch { if (request === version.current) setError("Place search couldn’t connect. Try again, choose a point on the map, or use your location."); }
-    finally { if (request === version.current) setLoading(false); }
+    const key = `${query.toLowerCase()}|${nearKey}`;
+    const timer = setTimeout(async () => {
+      const cached = cache.get(key);
+      if (cached) { setResults(cached); setStatus("done"); setActive(cached.length ? 0 : -1); return; }
+      setStatus("loading"); setError("");
+      try {
+        const response = await searchLocations({ query, ...(near ? { near } : {}) });
+        if (request !== version.current) return;
+        if (response.ok) { cache.set(key, response.data); setResults(response.data); setStatus("done"); setActive(response.data.length ? 0 : -1); }
+        else { setResults([]); setStatus("error"); setError(response.error); }
+      } catch {
+        if (request === version.current) { setResults([]); setStatus("error"); setError("Place search couldn’t connect."); }
+      }
+    }, DEBOUNCE_MS);
+    return () => clearTimeout(timer);
+    // `near` changes with the map centre; the rounded key avoids a new search on every pan.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [query, nearKey, searchable, disabled]);
+
+  function change(text: string) {
+    version.current++;
+    onValueChange(text.slice(0, 160));
+    setOpen(true); setActive(-1);
+    if (normalise(text).length < 3) { setResults([]); setStatus("idle"); setError(""); }
+  }
+  function choose(result: LocationSearchResult) {
+    version.current++;
+    setOpen(false); setResults([]); setStatus("idle");
+    onSelect(result);
+  }
+  function keyDown(event: React.KeyboardEvent<HTMLInputElement>) {
+    if (event.key === "ArrowDown" && results.length) { event.preventDefault(); setOpen(true); setActive(index => (index + 1) % results.length); }
+    else if (event.key === "ArrowUp" && results.length) { event.preventDefault(); setOpen(true); setActive(index => (index - 1 + results.length) % results.length); }
+    else if (event.key === "Enter" && open && results[active]) { event.preventDefault(); choose(results[active]); }
+    else if (event.key === "Escape" && open) { event.preventDefault(); setOpen(false); }
   }
 
-  return <div className="location-search">
-    <div className={`chosen-location ${hasSelection ? "chosen" : ""}`}><span>{hasSelection ? <Check size={13} /> : null}<strong>{selectedLabel}</strong>{selectedAddress ? <small>{selectedAddress}</small> : null}</span>{hasSelection ? <button type="button" className="clear-location" onClick={() => { clearSearch(); onClear(); }} disabled={disabled} aria-label={`Clear ${label.toLowerCase()}`} title="Clear selected location"><X size={13} /></button> : null}</div>
-    <form onSubmit={search} className="location-search-form"><label className="sr-only" htmlFor={inputId}>{label}: search a place or address</label><div className="search-input-wrap"><Search size={15} /><input id={inputId} type="search" autoComplete="off" placeholder="Search a place or address" value={query} maxLength={160} disabled={disabled} onChange={event => { version.current++; setQuery(event.target.value); setResults([]); setError(""); setSearched(false); setLoading(false); }} /><button type="button" onClick={clearSearch} disabled={disabled || !query} aria-label={`Clear ${label.toLowerCase()} search`}><X size={12} /></button></div><button type="submit" className="location-search-submit" disabled={disabled || loading || query.trim().replace(/\s+/g, " ").length < 3}>{loading ? "Searching…" : "Search"}</button></form>
-    {loading ? <p className="search-status" role="status">Looking up places with Google Maps…</p> : null}
-    {error ? <p className="search-error" role="alert">{error}</p> : null}
-    {searched && !results.length ? <p className="search-status" role="status">No places found. Try adding a city or a more specific address.</p> : null}
-    {results.length ? <div className="location-search-results"><ul aria-label={`${label} search results`}>{results.map(result => <li key={result.id}><button type="button" disabled={disabled} onClick={() => { clearSearch(); onSelect(result); }}><strong>{result.name}</strong><span>{result.address}</span></button>{result.attributions?.length ? <div className="search-attributions">{result.attributions.map((attribution, index) => attribution.uri && /^https?:\/\//.test(attribution.uri) ? <a key={`${index}:${attribution.displayName}`} href={attribution.uri} target="_blank" rel="noreferrer">{attribution.displayName}</a> : <span key={`${index}:${attribution.displayName}`}>{attribution.displayName}</span>)}</div> : null}</li>)}</ul><span className="google-text-attribution" translate="no">Google Maps</span></div> : null}
+  const showList = open && searchable && status !== "idle";
+  return <div className={`combobox ${compact ? "compact" : ""}`}>
+    <div className={`field ${selected ? "chosen" : ""} ${disabled ? "disabled" : ""}`}>
+      <label className="sr-only" htmlFor={inputId}>{label}</label>
+      <input id={inputId} type="text" role="combobox" autoComplete="off" spellCheck={false} placeholder={placeholder} value={value} disabled={disabled}
+        aria-expanded={showList} aria-controls={listId} aria-autocomplete="list" aria-activedescendant={showList && active >= 0 ? `${listId}-${active}` : undefined}
+        onChange={event => change(event.target.value)} onKeyDown={keyDown} onFocus={() => setOpen(true)} onBlur={() => setOpen(false)} />
+      {status === "loading" && searchable ? <Loader2 className="spin field-status" size={14} aria-hidden="true" /> : null}
+      {value ? <button type="button" className="field-icon" onClick={() => { version.current++; setResults([]); setStatus("idle"); onClear(); }} disabled={disabled} aria-label={`Clear ${label.toLowerCase()}`} title="Clear"><X size={14} /></button> : null}
+      {adornment}
+    </div>
+    {showList ? <div className="suggestions" onMouseDown={event => event.preventDefault()}>
+      {status === "loading" ? <p className="suggestion-status" role="status">Looking up places…</p> : null}
+      {status === "error" ? <p className="suggestion-status error" role="alert">{error} You can also tap the map to drop a pin.</p> : null}
+      {status === "done" && !results.length ? <p className="suggestion-status" role="status">No places found. Try adding the town, or tap the map to drop a pin.</p> : null}
+      {results.length ? <ul id={listId} role="listbox" aria-label={`${label} suggestions`}>
+        {results.map((result, index) => <li key={result.id} id={`${listId}-${index}`} role="option" aria-selected={index === active} className={index === active ? "active" : ""} onClick={() => choose(result)} onMouseEnter={() => setActive(index)}>
+          <strong>{result.name}</strong><span>{result.address}</span>
+          {result.attributions?.length ? <span className="suggestion-attribution">{result.attributions.map((attribution, i) => attribution.uri && /^https?:\/\//.test(attribution.uri) ? <a key={`${i}:${attribution.displayName}`} href={attribution.uri} target="_blank" rel="noreferrer" onClick={event => event.stopPropagation()}>{attribution.displayName}</a> : <span key={`${i}:${attribution.displayName}`}>{attribution.displayName}</span>)}</span> : null}
+        </li>)}
+      </ul> : null}
+      {status === "done" ? <span className="google-text-attribution" translate="no">Google Maps</span> : null}
+    </div> : null}
   </div>;
 }

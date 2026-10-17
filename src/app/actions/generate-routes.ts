@@ -5,6 +5,7 @@ import { generateLiveRoutes } from "@/lib/geo/generate";
 import { generateDemoRoutes, DEMO_START, DEMO_DESTINATION } from "@/lib/demo-data";
 import { registerGeneratedRoutes } from "@/lib/events";
 import { distanceMeters, isCoordinates } from "@/lib/geo/coordinates";
+import { isDuration } from "@/lib/duration";
 import type { ActionResult, GenerateRequest, GenerateResponse } from "@/lib/types";
 
 function validate(raw: unknown): GenerateRequest | null {
@@ -12,7 +13,7 @@ function validate(raw: unknown): GenerateRequest | null {
   const input = raw as Record<string, unknown>;
   const start = input.start as Record<string, unknown> | undefined;
   if (!isCoordinates(start)) return null;
-  if (![15, 30, 45, 60, 90].includes(input.duration as number) || !["surprise", "scenic", "green", "historic", "hidden"].includes(input.mood as string) || !["destination", "loop", "explore"].includes(input.mode as string)) return null;
+  if (!isDuration(input.duration) || !["surprise", "scenic", "green", "historic", "hidden"].includes(input.mood as string) || !["destination", "loop", "explore"].includes(input.mode as string)) return null;
   if (input.mode === "destination" && !isCoordinates(input.destination)) return null;
   if (typeof input.includeEvents !== "boolean" || typeof input.demo !== "boolean" || !Array.isArray(input.visitedIds) || input.visitedIds.length > 500 || !input.visitedIds.every((id) => typeof id === "string" && id.length > 0 && id.length <= 120)) return null;
   const destination = input.mode === "destination" ? input.destination as GenerateRequest["destination"] : undefined;

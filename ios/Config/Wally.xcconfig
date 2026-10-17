@@ -1,0 +1,8 @@
+// Shared app settings. Keys come from the git-ignored Secrets.xcconfig.
+// Run scripts/sync-secrets.sh to create it from the web app's .env.local.
+WALLY_GOOGLE_MAPS_SDK_KEY =
+WALLY_GOOGLE_PLACES_ROUTES_KEY =
+WALLY_GOOGLE_MAPS_MAP_ID =
+PRODUCT_BUNDLE_IDENTIFIER = com.jasir.wally
+
+#include? "Secrets.xcconfig"

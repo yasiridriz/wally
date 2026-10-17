@@ -1,14 +1,55 @@
 "use client";
 
-import { ArrowUpRight, Clock3, Footprints, MapPin } from "lucide-react";
-import type { Duration, WanderRoute } from "@/lib/types";
+import { Check, CheckCheck, Clock3, Flag, Footprints, MapPin } from "lucide-react";
+import { plannedVisitMinutes } from "@/lib/geo/scoring";
+import { matchReason } from "@/lib/route-labels";
+import type { WanderRoute } from "@/lib/types";
+import EventDetour from "./event-detour";
+import type { Planner } from "./use-planner";
+
 export const ROUTE_COLORS = ["#266b58", "#c77c45", "#6888a4"];
-export default function RouteCard({ route, index, selected, onSelect, requestedMinutes }: { route: WanderRoute; index: number; selected: boolean; onSelect: () => void; requestedMinutes: Duration }) {
-  return <button className={`route-card ${selected ? "selected" : ""}`} onClick={onSelect} aria-pressed={selected} style={{ "--route-color": ROUTE_COLORS[index % ROUTE_COLORS.length] } as React.CSSProperties}>
-    <div className="route-card-top"><span className="route-number">0{index + 1}</span><span className="route-kind">{route.destination ? "TARGETED" : route.isLoop ? "LOOP" : "EXPLORE"}</span><span className="wander-score">{Math.round(route.score)}<small>WANDER SCORE</small></span></div>
-    <h3>{route.name}<ArrowUpRight size={17} /></h3><p>{route.description}</p>
-    <div className="route-stats"><span><Clock3 size={13} />{route.totalMinutes} of {requestedMinutes} min</span><span><Footprints size={13} />{(route.distanceMeters / 1000).toFixed(1)} km</span><span><MapPin size={13} />{route.stops.length} stops</span></div>
-    <p className="loop-return-note">{route.isLoop ? "Returns to start" : route.destination ? "Finishes at your destination" : "Finishes at the last stop"} · walking and stops included</p>
-    <div className="highlight-list">{route.highlights.slice(0, 3).map(highlight => <span key={highlight}>{highlight}</span>)}</div>
-  </button>;
+export const routeColor = (index: number) => ROUTE_COLORS[index % ROUTE_COLORS.length];
+
+/** A route option. The selected card expands to its itinerary; it never nests another card. */
+export default function RouteCard({ route, index, selected, planner }: { route: WanderRoute; index: number; selected: boolean; planner: Planner }) {
+  const sample = route.source === "demo";
+  const detailsId = `route-details-${index}`;
+  return <article className={`route-card ${selected ? "selected" : ""}`} style={{ "--route-color": routeColor(index) } as React.CSSProperties}>
+    <button type="button" className="route-card-main" onClick={() => planner.selectRoute(route.id)} aria-expanded={selected} aria-controls={detailsId}>
+      <span className="route-title-row"><span className="route-swatch" aria-hidden="true" /><span className="route-name">{route.name}</span>{sample ? <span className="sample-badge">SAMPLE DATA</span> : null}</span>
+      <span className="route-stats"><span><Clock3 size={13} />{route.totalMinutes} min</span><span><Footprints size={13} />{(route.distanceMeters / 1000).toFixed(1)} km</span><span><MapPin size={13} />{route.stops.length} {route.stops.length === 1 ? "stop" : "stops"}</span></span>
+      <span className="route-description">{route.description}</span>
+      <span className="route-pills">
+        <span className="pill match">{matchReason(route, planner.preferences.mood)}</span>
+        <span className="pill score">Wander score {Math.round(route.score)}</span>
+        {route.event ? <span className="pill sample">Sample event</span> : null}
+        {route.highlights.slice(0, 3).map(highlight => <span key={highlight} className="pill">{highlight}</span>)}
+      </span>
+    </button>
+    {selected ? <div id={detailsId} className="route-details">
+      <p className="time-breakdown"><Clock3 size={14} />{route.walkingMinutes} min walking · {route.stopMinutes} min at stops · {route.bufferMinutes} min buffer</p>
+      <p className="route-shape-note">{route.isLoop ? "Returns to your start." : route.destination ? "Finishes at your destination." : "Finishes at the last stop."} Walking and stops included.</p>
+      {route.stops.some(stop => stop.suggestedActivity) ? <p className="activity-note">Activities are suggestions. Check access and opening hours.</p> : null}
+      <ol className="itinerary">
+        {route.stops.map((stop, stopIndex) => <li key={stop.id}>
+          <span className="stop-index">{stopIndex + 1}</span>
+          <div>
+            <span className="stop-category">{stop.category.replaceAll("_", " ")} · {plannedVisitMinutes(stop)} min planned{!route.isLoop && !route.destination && stopIndex === route.stops.length - 1 ? " · Finish" : ""}</span>
+            <h3>{stop.name}</h3>
+            <p>{stop.suggestedActivity || stop.description || "A point of interest along this route."}</p>
+            {stop.suggestedActivity && stop.description && stop.description !== stop.suggestedActivity ? <p className="stop-description">{stop.description}</p> : null}
+            {route.source === "live" && stop.attributions?.length ? <div className="place-attributions">{stop.attributions.map((attribution, i) => attribution.uri && /^https?:\/\//.test(attribution.uri) ? <a key={`${i}:${attribution.displayName}`} href={attribution.uri} target="_blank" rel="noreferrer">{attribution.displayName}</a> : <span key={`${i}:${attribution.displayName}`}>{attribution.displayName}</span>)}</div> : null}
+            <button type="button" className={`visited-button ${planner.visited.includes(stop.id) ? "visited" : ""}`} onClick={() => planner.visit(stop.id)} aria-pressed={planner.visited.includes(stop.id)}>
+              {planner.visited.includes(stop.id) ? <CheckCheck size={14} /> : <Check size={14} />}{planner.visited.includes(stop.id) ? "Been here" : "Mark as visited"}
+            </button>
+          </div>
+        </li>)}
+        {route.destination ? <li className="destination-stop">
+          <span className="stop-index finish"><Flag size={12} /></span>
+          <div><span className="stop-category">Your destination</span><h3>{sample ? "National Museum of Scotland" : planner.destination?.label || "Your chosen finish"}</h3><p>This endpoint is included in your walking estimate.</p></div>
+        </li> : null}
+      </ol>
+      {planner.preferences.includeEvents && !route.event ? <EventDetour planner={planner} /> : null}
+    </div> : null}
+  </article>;
 }

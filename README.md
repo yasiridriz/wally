@@ -14,6 +14,10 @@ npm run dev
 
 Open http://localhost:3000. Demo route generation works without credentials. A Google map requires a browser key; without one, demo routes have a clearly labelled local schematic preview instead of a map.
 
+## iOS app
+
+`ios/` contains a SwiftUI version of Wally with the same features, texts, and style. It uses the Google Maps SDK for iOS and calls Places API (New) and Routes API directly from the device. `ios/WallyCore` is a Swift port of `src/lib`. When you change a rule in `src/lib` (budgets, scoring, candidates, demo data, events, or the walk preview), make the same change in `ios/WallyCore` and its tests. Read `ios/README.md` for setup, key restrictions, and checks.
+
 ## Google Maps setup
 
 Create a project and enable billing in [Google Cloud Console](https://console.cloud.google.com/google/maps-apis/overview). Enable these APIs:

@@ -1,0 +1,161 @@
+import Foundation
+
+public struct Coordinates: Codable, Hashable, Sendable {
+  public var lat: Double
+  public var lng: Double
+  public init(lat: Double, lng: Double) { self.lat = lat; self.lng = lng }
+}
+
+public struct Attribution: Codable, Hashable, Sendable {
+  public var displayName: String
+  public var uri: String?
+  public init(displayName: String, uri: String? = nil) { self.displayName = displayName; self.uri = uri }
+  /// A link only for http(s) URIs, never for script or app schemes.
+  public var safeURL: URL? {
+    guard let uri, let url = URL(string: uri), ["http", "https"].contains(url.scheme?.lowercased() ?? "") else { return nil }
+    return url
+  }
+}
+
+public struct LocationSearchResult: Identifiable, Hashable, Sendable {
+  public var id: String
+  public var name: String
+  public var address: String
+  public var coordinates: Coordinates
+  public var attributions: [Attribution]
+  public init(id: String, name: String, address: String, coordinates: Coordinates, attributions: [Attribution] = []) {
+    self.id = id; self.name = name; self.address = address; self.coordinates = coordinates; self.attributions = attributions
+  }
+}
+
+public enum WalkDuration: Int, CaseIterable, Codable, Sendable { case m15 = 15, m30 = 30, m45 = 45, m60 = 60, m90 = 90 }
+public enum Mood: String, CaseIterable, Codable, Sendable { case surprise, scenic, green, historic, hidden }
+/// The internal value for Targeted stays `destination`, like the web app.
+public enum RouteMode: String, CaseIterable, Codable, Sendable { case destination, loop, explore }
+public enum PlaceCategory: String, CaseIterable, Codable, Sendable { case park, viewpoint, historic, art, attraction, path }
+public enum RouteSource: String, Codable, Sendable { case live, demo }
+
+/// Google photo resource name; a short-lived image URL is fetched on demand.
+public struct PlacePhotoRef: Hashable, Sendable {
+  public var name: String
+  public var authorAttributions: [Attribution]
+  public init(name: String, authorAttributions: [Attribution] = []) { self.name = name; self.authorAttributions = authorAttributions }
+}
+
+public struct Place: Identifiable, Hashable, Sendable {
+  public var id: String
+  public var name: String
+  public var lat: Double
+  public var lng: Double
+  public var category: PlaceCategory
+  public var description: String?
+  public var baseScenicScore: Double
+  public var tags: [String: String]?
+  public var attributions: [Attribution]
+  public var visitMinutes: Double?
+  public var suggestedActivity: String?
+  public var photo: PlacePhotoRef?
+  public init(id: String, name: String, lat: Double, lng: Double, category: PlaceCategory, description: String? = nil, baseScenicScore: Double, tags: [String: String]? = nil, attributions: [Attribution] = [], visitMinutes: Double? = nil, suggestedActivity: String? = nil, photo: PlacePhotoRef? = nil) {
+    self.id = id; self.name = name; self.lat = lat; self.lng = lng; self.category = category; self.description = description
+    self.baseScenicScore = baseScenicScore; self.tags = tags; self.attributions = attributions; self.visitMinutes = visitMinutes
+    self.suggestedActivity = suggestedActivity; self.photo = photo
+  }
+  public var coordinates: Coordinates { Coordinates(lat: lat, lng: lng) }
+}
+
+/// Every event in Wally is a fictional sample, never a live listing.
+public struct SampleEvent: Identifiable, Hashable, Sendable {
+  public var id: String
+  public var name: String
+  public var location: Coordinates
+  public var startTime: Date
+  public var endTime: Date
+  public var visitMinutes: Int
+  public var category: String
+  public var description: String
+  public init(id: String, name: String, location: Coordinates, startTime: Date, endTime: Date, visitMinutes: Int, category: String, description: String) {
+    self.id = id; self.name = name; self.location = location; self.startTime = startTime; self.endTime = endTime
+    self.visitMinutes = visitMinutes; self.category = category; self.description = description
+  }
+}
+
+public struct WanderRoute: Identifiable, Hashable, Sendable {
+  public var id: String
+  public var name: String
+  public var description: String
+  /// Route geometry in walking order.
+  public var geometry: [Coordinates]
+  public var stops: [Place]
+  public var distanceMeters: Int
+  public var walkingMinutes: Int
+  public var stopMinutes: Int
+  public var bufferMinutes: Int
+  public var totalMinutes: Int
+  public var score: Double
+  public var highlights: [String]
+  public var isLoop: Bool
+  public var source: RouteSource
+  public var event: SampleEvent?
+  public var destination: Coordinates?
+  public var routingWarnings: [String]
+  /// Validated start of the walk.
+  public var start: Coordinates?
+  /// Count of stops visited before the event on a detour route.
+  public var eventStopIndex: Int?
+  public init(id: String, name: String, description: String, geometry: [Coordinates], stops: [Place], distanceMeters: Int, walkingMinutes: Int, stopMinutes: Int, bufferMinutes: Int, totalMinutes: Int, score: Double, highlights: [String], isLoop: Bool, source: RouteSource, event: SampleEvent? = nil, destination: Coordinates? = nil, routingWarnings: [String] = [], start: Coordinates? = nil, eventStopIndex: Int? = nil) {
+    self.id = id; self.name = name; self.description = description; self.geometry = geometry; self.stops = stops
+    self.distanceMeters = distanceMeters; self.walkingMinutes = walkingMinutes; self.stopMinutes = stopMinutes
+    self.bufferMinutes = bufferMinutes; self.totalMinutes = totalMinutes; self.score = score; self.highlights = highlights
+    self.isLoop = isLoop; self.source = source; self.event = event; self.destination = destination
+    self.routingWarnings = routingWarnings; self.start = start; self.eventStopIndex = eventStopIndex
+  }
+}
+
+public struct GenerateRequest: Hashable, Sendable {
+  public var start: Coordinates
+  public var duration: WalkDuration
+  public var mood: Mood
+  public var mode: RouteMode
+  public var visitedIds: [String]
+  public var includeEvents: Bool
+  public var demo: Bool
+  public var destination: Coordinates?
+  public init(start: Coordinates, duration: WalkDuration, mood: Mood, mode: RouteMode, visitedIds: [String] = [], includeEvents: Bool = false, demo: Bool = false, destination: Coordinates? = nil) {
+    self.start = start; self.duration = duration; self.mood = mood; self.mode = mode; self.visitedIds = visitedIds
+    self.includeEvents = includeEvents; self.demo = demo; self.destination = destination
+  }
+  public var minutes: Int { duration.rawValue }
+}
+
+public struct GenerateResponse: Sendable {
+  public var routes: [WanderRoute]
+  public var message: String?
+  public init(routes: [WanderRoute], message: String? = nil) { self.routes = routes; self.message = message }
+}
+
+public struct DetourOption: Identifiable, Hashable, Sendable {
+  public var id: String
+  public var event: SampleEvent
+  public var route: WanderRoute
+  public var additionalMinutes: Int
+  public var additionalDistanceMeters: Int
+  public var arrivalTime: Date
+}
+
+public struct SummaryPhoto: Hashable, Sendable {
+  public var stopId: String
+  public var placeName: String
+  public var url: URL
+  public var authorAttributions: [Attribution]
+  public init(stopId: String, placeName: String, url: URL, authorAttributions: [Attribution]) {
+    self.stopId = stopId; self.placeName = placeName; self.url = url; self.authorAttributions = authorAttributions
+  }
+}
+
+/// A user-facing failure with a stable code, like the web `ActionResult` error.
+public struct WallyError: Error, Equatable, Sendable, LocalizedError {
+  public var code: String
+  public var message: String
+  public init(_ code: String, _ message: String) { self.code = code; self.message = message }
+  public var errorDescription: String? { message }
+}
