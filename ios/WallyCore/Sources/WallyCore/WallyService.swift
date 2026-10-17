@@ -34,7 +34,8 @@ public actor WallyService {
       let separation = distanceMeters(request.start, destination)
       if separation < 50 { return .failure(WallyError("INVALID_DESTINATION", "Choose a destination at least 50 metres from your start, or try a loop.")) }
       // A generous lower-bound screen prevents requests over implausibly large areas.
-      if separation > Double(request.minutes * 90) * request.pace.speed { return .failure(WallyError("DESTINATION_TOO_FAR", "That destination is too far for this \(request.pace == .run ? "running" : "walking") budget. Choose somewhere closer or allow more time.")) }
+      // Any destination is planned: one out of reach in the time gets the direct
+      // route, marked over budget, so the user sees how long it really takes.
     }
     if !request.demo && !client.hasKey {
       return .failure(WallyError("MISSING_KEY", "Live walks need a Google Maps API key with Places API (New) and Routes API enabled. Select Demo Mode to try sample Edinburgh walks."))
@@ -50,6 +51,8 @@ public actor WallyService {
       if request.demo && routes.isEmpty {
         let label = request.mode == .loop ? "loops" : request.mode == .explore ? "Explore routes" : "Targeted routes"
         message = "The fixed demo \(label) do not match a \(request.minutes)-minute trip. Demo routes use a fixed start at the Meadows\(ending). Switch off Demo Mode for a live route near your selected duration."
+      } else if routes.first?.overBudget == true {
+        message = nil
       } else if routes.count < 3 {
         let found = routes.isEmpty ? "No suitable walks fit this duration. Try another duration or starting point." : "Found \(routes.count) distinct walk\(routes.count == 1 ? "" : "s") near your selected total duration."
         message = [message, found].compactMap { $0 }.joined(separator: " ")

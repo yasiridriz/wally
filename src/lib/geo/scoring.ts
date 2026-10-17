@@ -77,9 +77,11 @@ export function durationTimeFit(totalMinutes: number, budget: number): boolean {
   return fitsTimeBudget(totalMinutes, budget) && totalMinutes >= Math.ceil(budget * .9);
 }
 
+/** Closest total first; every 10 memory points count like a minute closer. */
 export function rankTimeMatchedRoutes(routes: WanderRoute[], budget: number): WanderRoute[] {
+  const key = (route: WanderRoute) => Math.abs(budget - route.totalMinutes) - (route.memoryScore ?? 0) / 10;
   const ranked = routes.filter(route => durationTimeFit(route.totalMinutes, budget))
-    .sort((a, b) => Math.abs(budget - a.totalMinutes) - Math.abs(budget - b.totalMinutes) || b.score - a.score || a.name.localeCompare(b.name));
+    .sort((a, b) => key(a) - key(b) || b.score - a.score || a.name.localeCompare(b.name));
   const selected: WanderRoute[] = [];
   for (const route of ranked) {
     if (selected.every(other => stopOverlap(route.stops, other.stops) <= .5)) selected.push(route);
@@ -104,6 +106,21 @@ export function stopOverlap(a: Place[], b: Place[]): number {
   if (!a.length || !b.length) return 0;
   const ids = new Set(a.map((place) => place.id));
   return b.filter((place) => ids.has(place.id)).length / Math.min(a.length, b.length);
+}
+
+/** Share of path edges walked more than once, in either direction (0 to 1). */
+export function retraceShare(geometry: GeoJSON.LineString): number {
+  const edges = new Set<string>();
+  let repeated = 0;
+  const pointKey = (p: number[]) => `${p[0].toFixed(4)},${p[1].toFixed(4)}`;
+  for (let i = 1; i < geometry.coordinates.length; i++) {
+    const a = pointKey(geometry.coordinates[i - 1]), b = pointKey(geometry.coordinates[i]);
+    if (a === b) continue;
+    const edge = [a, b].sort().join(":");
+    if (edges.has(edge)) repeated++;
+    edges.add(edge);
+  }
+  return edges.size ? repeated / (edges.size + repeated) : 0;
 }
 
 /** Reversed edges count as repeated too, penalising out-and-back paths. */

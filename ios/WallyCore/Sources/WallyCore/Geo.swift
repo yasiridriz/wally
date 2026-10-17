@@ -14,8 +14,12 @@ public func distanceMeters(_ a: Coordinates, _ b: Coordinates) -> Double {
 }
 
 /// `speed` scales the ground covered per minute, e.g. 2.25 when running.
+/// The largest search circle Google Places (New) accepts.
+public let maxSearchRadius = 50_000.0
+
+/// How far discovery looks: it grows with the time so long walks find stops far enough out.
 public func searchRadius(_ duration: Int, isLoop: Bool, speed: Double = 1) -> Double {
-  (min(3500 * speed, max(350, Double(duration - 6) * 65 * speed / (isLoop ? 2.4 : 1.5)))).rounded()
+  (min(maxSearchRadius, max(350, Double(duration - 6) * 65 * speed / (isLoop ? 2.4 : 1.5)))).rounded()
 }
 
 public func pathDistance(_ points: [Coordinates]) -> Double {

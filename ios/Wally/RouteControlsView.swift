@@ -6,6 +6,12 @@ private let moods: [(Mood, String, String)] = [
   (.historic, "Historic", "building.columns"), (.hidden, "Hidden gems", "safari"),
 ]
 
+/// "1 h 20 min" from 80 minutes; shorter durations stay in minutes.
+func friendlyMinutes(_ minutes: Int) -> String {
+  let hours = minutes / 60, rest = minutes % 60
+  return hours == 0 ? "\(minutes) min" : rest == 0 ? "\(hours) h" : "\(hours) h \(rest) min"
+}
+
 /// `src/components/route-controls.tsx`.
 struct RouteControlsView: View {
   @Environment(AppModel.self) private var model
@@ -71,6 +77,14 @@ struct RouteControlsView: View {
             }.buttonStyle(PressStyle()).accessibilityAddTraits(active ? .isSelected : [])
           }
         }
+        HStack(spacing: 10) {
+          IconButton(systemName: "minus", size: 32, label: "5 minutes less") { update { $0.duration = WalkDuration(clamping: $0.duration.rawValue - 5) } }
+            .disabled(prefs.duration.rawValue <= WalkDuration.minimum)
+          Text(friendlyMinutes(prefs.duration.rawValue)).wallyText(15, .semibold, .forest).frame(minWidth: 110)
+            .accessibilityLabel("Total time \(prefs.duration.rawValue) minutes")
+          IconButton(systemName: "plus", size: 32, label: "5 minutes more") { update { $0.duration = WalkDuration(clamping: $0.duration.rawValue + 5) } }
+            .disabled(prefs.duration.rawValue >= WalkDuration.maximum)
+        }.frame(maxWidth: .infinity).padding(.top, 10)
         Text(prefs.mode == .loop ? "Walking, stops and return included." : prefs.mode == .explore ? "Walking and stops included. Finish at the last stop." : "Walking and stops included. Finish at your destination.")
           .wallyText(9, .regular, Color(hex: 0x929787)).padding(.top, 8)
       }.padding(.top, 24)
@@ -99,6 +113,16 @@ struct RouteControlsView: View {
           Text("Check for detours that fit your time").wallyText(11, .regular, Color(hex: 0x8b9181))
         }
       }.toggleStyle(WallyToggleStyle()).padding(.top, 22)
+
+      // Without favourites the tag has nothing to prefer, so it stays off until one exists.
+      Toggle(isOn: Binding(get: { prefs.favourites }, set: { value in update { $0.favourites = value } })) {
+        VStack(alignment: .leading, spacing: 4) {
+          Text("Favourites").wallyText(12, .medium)
+          Text(model.favouriteCount > 0 ? "Prefer your \(model.favouriteCount) favourite route\(model.favouriteCount == 1 ? "" : "s")" : "Favourite a route in History first")
+            .wallyText(11, .regular, Color(hex: 0x8b9181))
+        }
+      }.toggleStyle(WallyToggleStyle()).padding(.top, 14)
+        .disabled(!prefs.favourites && model.favouriteCount == 0)
 
       PrimaryButton(action: model.generate) {
         Text(model.loading ? "Finding routes…" : "Find routes")

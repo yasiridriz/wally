@@ -3,7 +3,7 @@ export type LocationSearchResult = {
   id: string; name: string; address: string; coordinates: Coordinates;
   attributions?: { displayName: string; uri?: string }[];
 };
-/** Any whole minute from 5 to 180; see `src/lib/duration.ts`. */
+/** Any whole minute from 5 to 480; see `src/lib/duration.ts`. */
 export type Duration = number;
 export type Mood = 'surprise' | 'scenic' | 'green' | 'historic' | 'hidden';
 /** A selectable tag. An empty selection means Surprise me. */
@@ -35,6 +35,10 @@ export type WanderRoute = {
   routingWarnings?: string[];
   /** Validated start of the walk. */
   start?: Coordinates;
+  /** The destination cannot be reached within the chosen time: this is the direct way there. */
+  overBudget?: boolean;
+  /** Points from path memory, favourites and reviews; also used in ranking. */
+  memoryScore?: number;
   /** Count of stops visited before the event on a detour route. */
   eventStopIndex?: number;
 };
@@ -42,8 +46,19 @@ export type GenerateRequest = {
   start: Coordinates; duration: Duration; moods: MoodTag[]; mode: RouteMode;
   /** Running divides travel time by RUN_SPEED; omitted means walking. */
   pace?: Pace;
+  /** Routes this user opened before, most recent first. See `src/lib/memory.ts`. */
+  memory?: MemoryHint[];
+  /** The Favourites tag: favourite routes and their places are strongly preferred. */
+  favourites?: boolean;
+  /** Stops of favourite routes, offered to the planner with the Favourites tag. */
+  favouritePlaces?: Place[];
+  /** Everyone's average review per place. Filled on the server, never by the client. */
+  ratings?: ReadonlyMap<string, PlaceRating>;
   visitedIds: string[]; includeEvents: boolean; demo: boolean; destination?: Coordinates;
 };
+/** One remembered route: its stops and how the user felt about it. */
+export type MemoryHint = { stopIds: string[]; favourite: boolean; rating?: number };
+export type PlaceRating = { average: number; count: number };
 export type ActionResult<T> = { ok: true; data: T } | { ok: false; error: string; code: string };
 export type GenerateResponse = { routes: WanderRoute[]; message?: string };
 export type DetourOption = {

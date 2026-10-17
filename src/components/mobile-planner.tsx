@@ -6,6 +6,7 @@ import Link from "next/link";
 import { routeShapeLabel } from "@/lib/route-labels";
 import { Brand, BrandMark, DemoToggle, PaceToggle } from "./brand";
 import GenerateButton from "./generate-button";
+import { HistoryButton } from "./path-history";
 import LocationFields from "./location-fields";
 import { PreferenceMenu } from "./preference-chips";
 import RouteResults from "./route-results";
@@ -45,14 +46,15 @@ export default function MobilePlanner({ planner }: { planner: Planner }) {
   const onStart = () => { setFolded(true); setSheetFolded(false); };
   const onFail = () => setFolded(false);
   const reopen = () => { setFolded(false); setSheetFolded(true); };
-  const title = loading ? "Finding your walk…" : routes.length ? (sheetFolded && selected ? selected.name : "Pick your adventure") : error || generated ? "No walk this time" : "";
+  const overBudget = routes.some(route => route.overBudget);
+  const title = loading ? "Finding your walk…" : overBudget ? `Takes longer than ${planner.preferences.duration} min` : routes.length ? (sheetFolded && selected ? selected.name : "Pick your adventure") : error || generated ? "No walk this time" : "";
   const destinationLabel = planner.demo ? "National Museum" : planner.destination?.label;
 
   return <>
     <div ref={top} className="phone-top">
       {folded ? <button type="button" className="summary-bar" onClick={reopen} aria-label="Edit your walk">
         <BrandMark size={26} />
-        <span className="summary-text"><span className="summary-duration">{planner.preferences.duration} min {planner.preferences.pace === "run" ? "run" : "walk"}</span><span className="summary-detail">{routeShapeLabel({ loop: planner.loop, destinationLabel, moods: planner.preferences.moods, includeEvents: planner.preferences.includeEvents })}</span></span>
+        <span className="summary-text"><span className="summary-duration">{planner.preferences.duration} min {planner.preferences.pace === "run" ? "run" : "walk"}</span><span className="summary-detail">{routeShapeLabel({ loop: planner.loop, destinationLabel, moods: planner.preferences.moods, includeEvents: planner.preferences.includeEvents, favourites: planner.preferences.favourites })}</span></span>
         <span className="summary-edit">Edit</span>
       </button> : <div className="phone-card">
         <div className="phone-brand">
@@ -60,6 +62,7 @@ export default function MobilePlanner({ planner }: { planner: Planner }) {
           <span className="phone-brand-actions">
             <DemoToggle on={planner.demo} onToggle={planner.toggleDemo} disabled={loading} />
             <PaceToggle pace={planner.preferences.pace} onToggle={planner.togglePace} disabled={loading} />
+            <HistoryButton planner={planner} compact />
             <Link className="icon-link" href="/terms" aria-label="About Wally and terms of use"><Info size={16} /></Link>
             {routes.length ? <button type="button" className="icon-link" onClick={() => { setFolded(true); setSheetFolded(false); }} aria-label="Hide the planner"><ChevronUp size={18} /></button> : null}
           </span>
@@ -73,7 +76,7 @@ export default function MobilePlanner({ planner }: { planner: Planner }) {
     {showSheet ? <section ref={sheet} className={`results-sheet ${sheetFolded ? "folded" : ""}`} aria-label="Your walks">
       <button type="button" className="sheet-header" onClick={() => setSheetFolded(value => !value)} aria-expanded={!sheetFolded}>
         <span className="sheet-handle" aria-hidden="true" />
-        <span className="sheet-title">{title}</span>
+        <span className={`sheet-title ${overBudget && !loading ? "over-time" : ""}`}>{title}</span>
         {routes.length && !loading ? <span className="sheet-count">{routes.length} {routes.length === 1 ? "option" : "options"}</span> : null}
         {sheetFolded ? <ChevronUp size={18} aria-label="Show results" /> : <ChevronDown size={18} aria-label="Fold results" />}
       </button>

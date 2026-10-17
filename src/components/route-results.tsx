@@ -23,6 +23,7 @@ function LoadingState() {
 /** Loading, error, or up to three route cards for the current request. */
 export default function RouteResults({ planner }: { planner: Planner }) {
   const { error, loading, routes, selected, message, demo } = planner;
+  const overBudget = routes.find(route => route.overBudget);
   if (!planner.generated && !routes.length) return null;
   return <section className="results" aria-label="Your walks">
     {demo ? <div className="notice"><Info size={16} /><p><strong>Sample Edinburgh walks.</strong> Paths and times are illustrative, not verified directions.{!planner.hasLiveSetup ? " Configure Google Maps to use live routing." : ""}</p></div> : null}
@@ -36,9 +37,13 @@ export default function RouteResults({ planner }: { planner: Planner }) {
       </div>
     </div> : null}
     {message && !loading ? <p className="generation-message" role="status">{message}</p> : null}
+    {overBudget && !loading ? <div className="over-budget-alert" role="alert">
+      <TriangleAlert size={18} aria-hidden="true" />
+      <p><strong>Your destination can’t be reached in {planner.preferences.duration} minutes.</strong> The most direct {overBudget.pace === "run" ? "run" : "walk"} takes about <strong>{overBudget.totalMinutes} minutes</strong>, {overBudget.totalMinutes - planner.preferences.duration} minutes longer. It’s shown in red: allow more time or choose a closer destination.</p>
+    </div> : null}
     {routes.length && !loading ? <>
       <div className="results-heading">
-        <h2 className="section-title">Pick your adventure</h2>
+        <h2 className="section-title">{overBudget ? "The way there" : "Pick your adventure"}</h2>
         <button type="button" className="round-button small" onClick={() => planner.generate()} aria-label="Find different walks" title="Find different walks"><RefreshCw size={15} /></button>
       </div>
       {selected?.source === "live" ? <div className="routing-notice"><span className="google-text-attribution" translate="no">Google Maps</span><p>Walking directions may not include all sidewalks or pedestrian paths. Use caution.</p>{selected.routingWarnings?.map((warning, index) => <p key={`${index}:${warning}`}>{warning}</p>)}</div> : null}

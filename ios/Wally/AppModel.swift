@@ -28,6 +28,12 @@ final class AppModel {
   var routes: [WanderRoute] = []
   var selected: WanderRoute?
   var visited: [String] = []
+  /// Path history: routes the user opened, with their reviews. Device-only.
+  var history: [HistoryEntry] = []
+  var favouriteCount: Int { history.filter(\.favourite).count }
+  /// Reviews of live routes, as JSON Lines in Application Support, ready to export or upload.
+  private let reviewStore = ReviewStore(file: (FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask).first ?? FileManager.default.temporaryDirectory)
+    .appendingPathComponent("Wally", isDirectory: true).appendingPathComponent("reviews.jsonl"))
   var loading = false
   var locating = false
   var error = ""
@@ -56,6 +62,7 @@ final class AppModel {
   init() {
     preferences = Preferences.restore(UserDefaults.standard.data(forKey: "wally:preferences:v1"), hasLiveSetup: AppConfig.hasLiveSetup)
     if let data = defaults.data(forKey: "wally:visited:v1"), let stored = try? JSONDecoder().decode([String].self, from: data) { visited = Array(stored.prefix(500)) }
+    if let data = defaults.data(forKey: "wally:history:v1"), let stored = try? JSONDecoder().decode([HistoryEntry].self, from: data) { history = Array(stored.prefix(historyLimit)) }
   }
 
   var effectiveStart: Coordinates { preferences.demo ? demoStart : start }
@@ -186,8 +193,11 @@ final class AppModel {
     clearResults()
     let version = requestVersion
     loading = true; mobileExpanded = true
-    let request = GenerateRequest(start: effectiveStart, duration: preferences.duration, moods: preferences.moods, mode: preferences.mode, pace: preferences.pace, visitedIds: visited,
+    var request = GenerateRequest(start: effectiveStart, duration: preferences.duration, moods: preferences.moods, mode: preferences.mode, pace: preferences.pace, visitedIds: visited,
       includeEvents: preferences.includeEvents, demo: preferences.demo, destination: preferences.mode == .destination ? effectiveDestination : nil)
+    request.memory = memoryHints(history)
+    request.favourites = preferences.favourites
+    if preferences.favourites && !preferences.demo { request.favouritePlaces = favouritePlaces(history) }
     Task {
       let result = await service.generateRoutes(request)
       guard version == requestVersion else { return }
@@ -203,6 +213,9 @@ final class AppModel {
   }
 
   func selectRoute(_ route: WanderRoute) {
+    // Every tap counts, including the route that was preselected. A direct
+    // over-budget route has no stops to remember.
+    if preview == nil && !route.stops.isEmpty && !route.overBudget { remember(route) }
     detourVersion += 1; detourLoading = false
     selected = route; detours = []; preview = nil; acceptedDetour = nil; detourError = ""
     loadPhotos(route)
@@ -240,6 +253,58 @@ final class AppModel {
       }
     }
   }
+
+  // MARK: Path history
+
+  private func saveHistory(_ next: [HistoryEntry]) {
+    history = Array(next.prefix(historyLimit))
+    if let data = try? JSONEncoder().encode(history) { defaults.set(data, forKey: "wally:history:v1") }
+  }
+
+  func historyEntry(for route: WanderRoute) -> HistoryEntry? { history.first { $0.matches(route, mode: preferences.mode) } }
+
+  /// A tapped route joins the top of history. Opening the same stops again refreshes that entry and keeps its review.
+  @discardableResult func remember(_ route: WanderRoute) -> HistoryEntry {
+    let existing = historyEntry(for: route)
+    let entry = HistoryEntry(id: existing?.id ?? UUID().uuidString, route: route, mode: preferences.mode, pace: preferences.pace, moods: preferences.moods,
+      duration: preferences.duration.rawValue, rating: existing?.rating, favourite: existing?.favourite ?? false)
+    saveHistory([entry] + history.filter { $0.id != entry.id })
+    return entry
+  }
+
+  /// Saves a review; live reviews are also appended to the review store for future ranking.
+  private func review(_ entry: HistoryEntry) {
+    saveHistory(history.contains { $0.id == entry.id } ? history.map { $0.id == entry.id ? entry : $0 } : [entry] + history)
+    guard let record = ReviewRecord(entry) else { return }
+    let store = reviewStore
+    Task.detached { try? await store.append(record) }
+  }
+
+  /// Tapping the current star again clears the rating.
+  func rate(_ id: String, _ rating: Int) {
+    guard var entry = history.first(where: { $0.id == id }) else { return }
+    entry.rating = entry.rating == rating ? nil : rating
+    review(entry)
+  }
+
+  func toggleFavourite(_ id: String) {
+    guard var entry = history.first(where: { $0.id == id }) else { return }
+    entry.favourite.toggle()
+    review(entry)
+  }
+
+  /// Reviews a route on screen, adding it to history first if it was never tapped.
+  func rateRoute(_ route: WanderRoute, _ rating: Int) {
+    guard !route.stops.isEmpty, !route.overBudget else { return }
+    rate((historyEntry(for: route) ?? remember(route)).id, rating)
+  }
+  func toggleRouteFavourite(_ route: WanderRoute) {
+    guard !route.stops.isEmpty, !route.overBudget else { return }
+    toggleFavourite((historyEntry(for: route) ?? remember(route)).id)
+  }
+
+  func removeHistory(_ id: String) { saveHistory(history.filter { $0.id != id }) }
+  func clearHistory() { saveHistory([]) }
 
   func acceptDetour() {
     guard let preview, let selected else { return }

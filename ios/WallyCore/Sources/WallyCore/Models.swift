@@ -28,7 +28,22 @@ public struct LocationSearchResult: Identifiable, Hashable, Sendable {
   }
 }
 
-public enum WalkDuration: Int, CaseIterable, Codable, Sendable { case m15 = 15, m30 = 30, m45 = 45, m60 = 60, m90 = 90 }
+/// Total trip minutes: any whole minute from 5 to 480 (eight hours), like the web app.
+public struct WalkDuration: RawRepresentable, Hashable, Codable, Sendable, Comparable {
+  public static let minimum = 5
+  public static let maximum = 480
+  public let rawValue: Int
+  public init?(rawValue: Int) {
+    guard (WalkDuration.minimum...WalkDuration.maximum).contains(rawValue) else { return nil }
+    self.rawValue = rawValue
+  }
+  public init(clamping minutes: Int) { rawValue = Swift.min(WalkDuration.maximum, Swift.max(WalkDuration.minimum, minutes)) }
+  public static let m15 = WalkDuration(clamping: 15), m30 = WalkDuration(clamping: 30), m45 = WalkDuration(clamping: 45)
+  public static let m60 = WalkDuration(clamping: 60), m90 = WalkDuration(clamping: 90)
+  /// The quick-choice presets.
+  public static let allCases: [WalkDuration] = [.m15, .m30, .m45, .m60, .m90]
+  public static func < (a: WalkDuration, b: WalkDuration) -> Bool { a.rawValue < b.rawValue }
+}
 public enum Mood: String, CaseIterable, Codable, Sendable {
   case surprise, scenic, green, historic, hidden
   /// The selectable tags. An empty selection means Surprise me.
@@ -116,6 +131,10 @@ public struct WanderRoute: Identifiable, Hashable, Sendable {
   public var start: Coordinates?
   /// Count of stops visited before the event on a detour route.
   public var eventStopIndex: Int?
+  /// Points from path memory, favourites and reviews; also used in ranking.
+  public var memoryScore: Double = 0
+  /// The destination cannot be reached within the chosen time: this is the direct way there.
+  public var overBudget = false
   public init(id: String, name: String, description: String, geometry: [Coordinates], stops: [Place], distanceMeters: Int, walkingMinutes: Int, stopMinutes: Int, bufferMinutes: Int, totalMinutes: Int, score: Double, highlights: [String], isLoop: Bool, source: RouteSource, event: SampleEvent? = nil, destination: Coordinates? = nil, routingWarnings: [String] = [], start: Coordinates? = nil, eventStopIndex: Int? = nil) {
     self.id = id; self.name = name; self.description = description; self.geometry = geometry; self.stops = stops
     self.distanceMeters = distanceMeters; self.walkingMinutes = walkingMinutes; self.stopMinutes = stopMinutes
@@ -132,6 +151,14 @@ public struct GenerateRequest: Hashable, Sendable {
   public var moods: [Mood]
   public var mode: RouteMode
   public var pace: Pace
+  /// Routes this user opened before, most recent first. See `Memory.swift`.
+  public var memory: [MemoryHint] = []
+  /// The Favourites tag: favourite routes and their places are strongly preferred.
+  public var favourites = false
+  /// Stops of favourite routes, offered to the planner with the Favourites tag.
+  public var favouritePlaces: [Place] = []
+  /// Average review per place, when a review source is available.
+  public var ratings: [String: PlaceRating] = [:]
   public var visitedIds: [String]
   public var includeEvents: Bool
   public var demo: Bool

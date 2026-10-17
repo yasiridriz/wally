@@ -4,9 +4,10 @@ import { MOOD_TAGS, type MoodTag, type Pace } from './types';
 /** "Finish elsewhere" becomes Targeted with a chosen destination, otherwise Explore. */
 export type RouteShape = 'loop' | 'elsewhere';
 /** No mood tags means Surprise me. */
-export type Preferences = { duration: number; moods: MoodTag[]; shape: RouteShape; includeEvents: boolean; demo: boolean; pace: Pace };
+/** `favourites` is the Favourites tag: favourite routes are strongly preferred. */
+export type Preferences = { duration: number; moods: MoodTag[]; shape: RouteShape; includeEvents: boolean; demo: boolean; pace: Pace; favourites: boolean };
 export const DEFAULT_PREFERENCES: Preferences = {
-  duration: DEFAULT_DURATION, moods: [], shape: 'elsewhere', includeEvents: false, demo: false, pace: 'walk',
+  duration: DEFAULT_DURATION, moods: [], shape: 'elsewhere', includeEvents: false, demo: false, pace: 'walk', favourites: false,
 };
 
 export const isMoodTag = (value: unknown): value is MoodTag => MOOD_TAGS.includes(value as MoodTag);
@@ -40,9 +41,9 @@ export function restorePreferences(raw: unknown, hasLiveSetup: boolean): Prefere
     if (!['destination', 'loop', 'explore'].includes(value.mode as string)) return defaults;
     shape = value.mode === 'loop' ? 'loop' : 'elsewhere';
   }
-  return { duration: value.duration, moods, shape, includeEvents: value.includeEvents === true, demo: !hasLiveSetup, pace: value.pace === 'run' ? 'run' : 'walk' };
+  return { duration: value.duration, moods, shape, includeEvents: value.includeEvents === true, demo: !hasLiveSetup, pace: value.pace === 'run' ? 'run' : 'walk', favourites: value.favourites === true };
 }
 
-export function persistablePreferences({ duration, moods, shape, includeEvents, pace }: Preferences) {
-  return { version: 4, duration, moods, shape, includeEvents, pace };
+export function persistablePreferences({ duration, moods, shape, includeEvents, pace, favourites }: Preferences) {
+  return { version: 4, duration, moods, shape, includeEvents, pace, favourites };
 }

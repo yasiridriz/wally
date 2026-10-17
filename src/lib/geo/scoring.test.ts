@@ -62,10 +62,21 @@ describe("ranking and diversity", () => {
   });
 });
 
+describe("memory in ranking", () => {
+  it("lets memory points outweigh a small difference in total time", () => {
+    const favourite = { ...route("fav", [place("f1"), place("f2")], 50), totalMinutes: 27, memoryScore: 60 };
+    const fresh = { ...route("new", [place("n1"), place("n2")], 90), totalMinutes: 29 };
+    expect(rankTimeMatchedRoutes([fresh, favourite], 30).map(r => r.id)).toEqual(["fav", "new"]);
+    expect(rankTimeMatchedRoutes([fresh, { ...favourite, memoryScore: 0 }], 30).map(r => r.id)).toEqual(["new", "fav"]);
+  });
+});
+
 describe("running pace", () => {
-  it("searches further when running, within the scaled cap", () => {
+  it("searches further when running and for long walks, up to the Places limit", () => {
     expect(searchRadius(30, true, 2.25)).toBeGreaterThan(searchRadius(30, true) * 2);
-    expect(searchRadius(180, false, 2.25)).toBe(Math.round(3500 * 2.25));
+    // Long walks search further; only the Places API limit caps it.
+    expect(searchRadius(180, false)).toBeGreaterThan(3500 * 2);
+    expect(searchRadius(480, false, 5)).toBe(50_000);
   });
 });
 

@@ -8,8 +8,11 @@ public struct Preferences: Equatable, Sendable {
   public var includeEvents: Bool
   public var demo: Bool
   public var pace: Pace
-  public init(duration: WalkDuration = .m30, moods: [Mood] = [], mode: RouteMode = .loop, includeEvents: Bool = false, demo: Bool = false, pace: Pace = .walk) {
+  /// The Favourites tag: favourite routes are strongly preferred.
+  public var favourites: Bool
+  public init(duration: WalkDuration = .m30, moods: [Mood] = [], mode: RouteMode = .loop, includeEvents: Bool = false, demo: Bool = false, pace: Pace = .walk, favourites: Bool = false) {
     self.duration = duration; self.moods = Mood.normalized(moods); self.mode = mode; self.includeEvents = includeEvents; self.demo = demo; self.pace = pace
+    self.favourites = favourites
   }
   public static let defaults = Preferences()
 
@@ -38,11 +41,11 @@ public struct Preferences: Equatable, Sendable {
       moods = mood == .surprise ? [] : [mood]
     }
     return Preferences(duration: duration, moods: moods, mode: version == 2 || version == 3 ? mode : .loop, includeEvents: value["includeEvents"] as? Bool == true, demo: !hasLiveSetup,
-      pace: (value["pace"] as? String).flatMap(Pace.init(rawValue:)) ?? .walk)
+      pace: (value["pace"] as? String).flatMap(Pace.init(rawValue:)) ?? .walk, favourites: value["favourites"] as? Bool == true)
   }
 
   /// Demo Mode is never persisted.
   public func persistable() -> Data {
-    (try? JSONSerialization.data(withJSONObject: ["version": 3, "duration": duration.rawValue, "moods": moods.map(\.rawValue), "mode": mode.rawValue, "includeEvents": includeEvents, "pace": pace.rawValue], options: [.sortedKeys])) ?? Data()
+    (try? JSONSerialization.data(withJSONObject: ["version": 3, "duration": duration.rawValue, "moods": moods.map(\.rawValue), "mode": mode.rawValue, "includeEvents": includeEvents, "pace": pace.rawValue, "favourites": favourites], options: [.sortedKeys])) ?? Data()
   }
 }

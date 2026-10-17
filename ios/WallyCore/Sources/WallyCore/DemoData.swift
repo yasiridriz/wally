@@ -48,10 +48,13 @@ public func demoRouteSamples(_ request: GenerateRequest) -> [WanderRoute] {
     let total = walking + stopMinutes + buffer
     guard total <= request.minutes else { return nil }
     let highlights = [stops[0].category == .park ? "A little green space" : "Local discoveries", request.mode == .loop ? "Back where you started" : request.mode == .destination ? "Finish at the museum" : "A fresh finish", "Illustrative sample route"]
-    return WanderRoute(id: "demo-\(request.mode.rawValue)-\(index)", name: fixture.name, description: fixture.description, geometry: path, stops: stops,
+    let scored = scoreWithMemory(stops, request)
+    var route = WanderRoute(id: "demo-\(request.mode.rawValue)-\(index)", name: fixture.name, description: fixture.description, geometry: path, stops: stops,
       distanceMeters: distance, walkingMinutes: walking, stopMinutes: stopMinutes, bufferMinutes: buffer, totalMinutes: total,
-      score: scorePlaces(stops, moods: request.moods, visitedIds: request.visitedIds), highlights: highlights, isLoop: request.mode == .loop,
+      score: scored.score, highlights: highlights, isLoop: request.mode == .loop,
       source: .demo, destination: request.mode == .destination ? demoDestination : nil)
+    route.memoryScore = scored.memory
+    return route
   }
 }
 

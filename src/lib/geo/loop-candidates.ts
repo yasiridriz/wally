@@ -1,6 +1,7 @@
 import type { Coordinates, GenerateRequest, Place } from "../types";
 import { distanceMeters, pathDistance } from "./coordinates";
 import { paceSpeed } from "../pace";
+import { memoryScore } from "../memory";
 import { estimateExperienceWithStops, moodCoverage, scorePlaces, shortlistForMoods, stopOverlap } from "./scoring";
 
 export type ScenicCandidate = { stops: Place[]; geographicMeters: number; key: string; spread: number };
@@ -66,7 +67,9 @@ export function chooseCandidate(pool: ScenicCandidate[], request: GenerateReques
     const distanceFit = 250 * closeness + (estimated > request.duration ? 20 : 0);
     // Several tags: prefer combinations that visit a stop for each of them.
     const coverage = request.moods.length > 1 ? moodCoverage(candidate.stops, request.moods) * .1 : 0;
-    return -distanceFit + scorePlaces(candidate.stops, request.moods, request.visitedIds) * .12 + candidate.spread * 8 + coverage - overlap * 12;
+    // Path memory: repeats cost, favourites (with the tag) and well-rated places gain.
+    const memory = memoryScore(candidate.stops, request) * .5;
+    return -distanceFit + scorePlaces(candidate.stops, request.moods, request.visitedIds) * .12 + candidate.spread * 8 + coverage + memory - overlap * 12;
   }
   return pool.filter((candidate) => !used.has(candidate.key))
     .sort((a, b) => merit(b) - merit(a) || a.key.localeCompare(b.key))[0];

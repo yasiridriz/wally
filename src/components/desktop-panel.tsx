@@ -3,6 +3,7 @@
 import { useEffect, useRef } from "react";
 import { Brand, DemoToggle, LegalLinks, PaceToggle } from "./brand";
 import GenerateButton from "./generate-button";
+import { HistoryButton } from "./path-history";
 import LocationFields from "./location-fields";
 import { PreferenceChips } from "./preference-chips";
 import RouteResults from "./route-results";
@@ -21,7 +22,7 @@ export default function DesktopPanel({ planner }: { planner: Planner }) {
   }, [planner.loading, hasRoutes]);
 
   return <aside className="desktop-panel" aria-label="Plan your walk">
-    <header className="panel-header"><Brand tagline /><span className="panel-header-actions"><DemoToggle on={planner.demo} onToggle={planner.toggleDemo} disabled={planner.loading} /><PaceToggle pace={planner.preferences.pace} onToggle={planner.togglePace} disabled={planner.loading} /></span></header>
+    <header className="panel-header"><Brand tagline /><span className="panel-header-actions"><DemoToggle on={planner.demo} onToggle={planner.toggleDemo} disabled={planner.loading} /><PaceToggle pace={planner.preferences.pace} onToggle={planner.togglePace} disabled={planner.loading} /><HistoryButton planner={planner} /></span></header>
     <div className="panel-scroll">
       <TimeSelector value={planner.preferences.duration} onChange={planner.setDuration} disabled={planner.loading} />
       <hr className="divider" />

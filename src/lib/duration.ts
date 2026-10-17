@@ -1,6 +1,7 @@
 /** Total trip minutes: walking, planned visits and the safety buffer. */
 export const MIN_DURATION = 5;
-export const MAX_DURATION = 180;
+/** Eight hours: long walks and runs are planned like any other. */
+export const MAX_DURATION = 480;
 export const DURATION_PRESETS = [15, 30, 45, 60, 90] as const;
 export const DEFAULT_DURATION = 30;
 

@@ -67,6 +67,7 @@ struct HeaderView: View {
       }
       Spacer(minLength: 0)
       PaceToggle(wide: wide)
+      HistoryButton(wide: wide)
       if model.preferences.demo {
         Text("DEMO MODE").wallyText(wide ? 9 : 7, .semibold, Color(hex: 0x576d58), tracking: wide ? 1.2 : 0.8)
           .padding(.vertical, wide ? 10 : 7).padding(.horizontal, wide ? 14 : 10).background(Capsule().fill(Color(hex: 0xedf0e5)))
@@ -172,7 +173,7 @@ struct PlannerPanel: View {
             if !model.error.isEmpty { ErrorNotice() }
             if !model.message.isEmpty { Text(model.message).wallyText(11, .regular, Color(hex: 0x65745a)).lineSpacing(4).padding(.horizontal, 24).padding(.bottom, 18) }
             RouteResultsView().id("results")
-            if model.preferences.includeEvents, let selected = model.selected, selected.event == nil { EventDetourView() }
+            if model.preferences.includeEvents, let selected = model.selected, selected.event == nil, !selected.overBudget { EventDetourView() }
             if let accepted = model.acceptedDetour {
               Text("Sample detour added: \(accepted.event.name). Total estimate includes the visit.").wallyText(11, .regular, Color(hex: 0x65745a)).lineSpacing(4).padding(.horizontal, 24).padding(.bottom, 18)
             }

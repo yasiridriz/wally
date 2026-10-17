@@ -32,9 +32,13 @@ private func googleWaypoint(_ point: Coordinates) -> [String: Any] {
   ["location": ["latLng": ["latitude": point.lat, "longitude": point.lng]]]
 }
 
-public func routeWalking(_ client: GoogleClient, _ waypoints: [Coordinates], budget: RoutingBudget) async throws -> WalkingResult {
+/// `via` lists pass-through waypoints by index: they shape the path without adding a leg or a stop.
+public func routeWalking(_ client: GoogleClient, _ waypoints: [Coordinates], via: Set<Int> = [], budget: RoutingBudget) async throws -> WalkingResult {
   guard client.hasKey else { throw ProviderError("Live walking routes need a Google Maps API key. Try Demo Mode.") }
-  guard waypoints.count >= 2, waypoints.count <= 6, waypoints.allSatisfy(isCoordinates) else { throw ProviderError("Invalid walking waypoints.") }
+  // Endpoints are never pass-through; one leg per pair of non-via waypoints.
+  let legs = waypoints.count - 1 - via.count
+  guard waypoints.count >= 2, waypoints.count <= 8, (1...5).contains(legs), !via.contains(0), !via.contains(waypoints.count - 1),
+        via.allSatisfy(waypoints.indices.contains), waypoints.allSatisfy(isCoordinates) else { throw ProviderError("Invalid walking waypoints.") }
   for attempt in 0..<2 {
     guard await budget.take() else { throw ProviderError("Routing request limit reached. Please try again shortly.") }
     do {
@@ -43,7 +47,7 @@ public func routeWalking(_ client: GoogleClient, _ waypoints: [Coordinates], bud
         body: [
           "origin": googleWaypoint(waypoints[0]), "destination": googleWaypoint(waypoints[waypoints.count - 1]),
           // Non-via stops retain one leg per waypoint pair, needed for event arrival times.
-          "intermediates": waypoints.dropFirst().dropLast().map { googleWaypoint($0).merging(["via": false]) { $1 } },
+          "intermediates": waypoints.indices.dropFirst().dropLast().map { googleWaypoint(waypoints[$0]).merging(["via": via.contains($0)]) { $1 } },
           "travelMode": "WALK", "computeAlternativeRoutes": false, "optimizeWaypointOrder": false,
           "polylineEncoding": "GEO_JSON_LINESTRING", "polylineQuality": "HIGH_QUALITY",
         ], timeout: 12)
@@ -74,7 +78,7 @@ public func routeWalking(_ client: GoogleClient, _ waypoints: [Coordinates], bud
         throw ProviderError("The walking network is too far from a selected location.", status: 1)
       }
       let segmentSeconds = ((route?["legs"] as? [Any]) ?? []).map { parseDuration(record($0)?["duration"]) ?? -1 }
-      guard segmentSeconds.count == waypoints.count - 1, segmentSeconds.allSatisfy({ $0 >= 0 }) else {
+      guard segmentSeconds.count == legs, segmentSeconds.allSatisfy({ $0 >= 0 }) else {
         throw ProviderError("The walking provider returned incomplete timing information.", status: 1)
       }
       let warnings = ((route?["warnings"] as? [Any]) ?? []).compactMap { $0 as? String }.prefix(20).map { String($0.prefix(2000)) }

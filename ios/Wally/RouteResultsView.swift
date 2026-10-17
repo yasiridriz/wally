@@ -16,8 +16,23 @@ struct RouteResultsView: View {
       .accessibilityElement(children: .combine).accessibilityLabel("Finding walking routes")
     } else if !model.routes.isEmpty {
       VStack(alignment: .leading, spacing: 0) {
+        if let over = model.routes.first(where: \.overBudget) {
+          HStack(alignment: .top, spacing: 9) {
+            Image(systemName: "exclamationmark.triangle.fill").font(.system(size: 15)).foregroundStyle(Color.danger)
+            (Text("Your destination can’t be reached in \(model.preferences.duration.rawValue) minutes. ").font(.wally(12, .semibold))
+              + Text("The most direct \(model.preferences.pace == .run ? "run" : "walk") takes about ")
+              + Text("\(over.totalMinutes) minutes").font(.wally(12, .semibold))
+              + Text(", \(over.totalMinutes - model.preferences.duration.rawValue) minutes longer. It’s shown in red: allow more time or choose a closer destination."))
+              .wallyText(12, .regular, Color.danger).lineSpacing(3).fixedSize(horizontal: false, vertical: true)
+          }
+          .padding(12).frame(maxWidth: .infinity, alignment: .leading)
+          .background(RoundedRectangle(cornerRadius: 12).fill(Color.dangerTint))
+          .overlay(RoundedRectangle(cornerRadius: 12).stroke(Color.danger, lineWidth: 1.5))
+          .padding(.bottom, 15)
+          .accessibilityElement(children: .combine)
+        }
         HStack {
-          Text("Suggested routes").wallyText(17, .semibold, .ink, tracking: -0.4)
+          Text(model.routes.contains(where: \.overBudget) ? "The way there" : "Suggested routes").wallyText(17, .semibold, .ink, tracking: -0.4)
           Spacer()
           IconButton(systemName: "arrow.clockwise", size: 30, label: "Regenerate routes", action: model.generate)
         }.padding(.bottom, 15)
@@ -67,7 +82,7 @@ struct RouteCardView: View {
   var requestedMinutes: Int
   var onSelect: () -> Void
   var body: some View {
-    let color = routeColor(index)
+    let color = route.overBudget ? Color.danger : routeColor(index)
     Button(action: onSelect) {
       VStack(alignment: .leading, spacing: 0) {
         HStack(spacing: 8) {
@@ -86,7 +101,9 @@ struct RouteCardView: View {
         }.padding(.top, 9)
         Text(route.description).wallyText(11, .regular, Color(hex: 0x84907b)).lineSpacing(5).multilineTextAlignment(.leading).padding(.top, 6)
         HStack(spacing: 12) {
-          Label("\(route.totalMinutes) of \(requestedMinutes) min", systemImage: "clock")
+          Label("\(route.totalMinutes) of \(requestedMinutes) min\(route.overBudget ? " · \(route.totalMinutes - requestedMinutes) over" : "")", systemImage: "clock")
+            .foregroundStyle(route.overBudget ? Color.danger : Color(hex: 0x63745c))
+            .fontWeight(route.overBudget ? .bold : .regular)
           Label(kilometres(route.distanceMeters), systemImage: "shoeprints.fill")
           Label("\(route.stops.count) stops", systemImage: "mappin")
         }.labelStyle(StatLabel()).wallyText(11, .regular, Color(hex: 0x63745c)).padding(.top, 13)
@@ -99,7 +116,8 @@ struct RouteCardView: View {
         }.padding(.top, 10)
       }
       .padding(16).frame(maxWidth: .infinity, alignment: .leading)
-      .card(border: selected ? color : .line, radius: 12, fill: selected ? Color(hex: 0xf0f3e9) : .clear)
+      .card(border: route.overBudget || selected ? color : .line, radius: 12, fill: route.overBudget ? Color.dangerTint : selected ? Color(hex: 0xf0f3e9) : .clear)
+      .overlay(RoundedRectangle(cornerRadius: 12).stroke(Color.danger, lineWidth: route.overBudget ? 2 : 0))
       .contentShape(RoundedRectangle(cornerRadius: 12))
     }
     .buttonStyle(PressStyle())
@@ -116,6 +134,17 @@ struct ItineraryView: View {
   var route: WanderRoute
   var body: some View {
     VStack(alignment: .leading, spacing: 0) {
+      if model.preview == nil && !route.overBudget {
+        let remembered = model.historyEntry(for: route)
+        HStack {
+          StarRating(value: remembered?.rating, label: "Rate \(route.name)") { model.rateRoute(route, $0) }
+          Spacer()
+          FavouriteButton(on: remembered?.favourite == true) { model.toggleRouteFavourite(route) }
+        }
+        .padding(.vertical, 6).padding(.horizontal, 10)
+        .background(RoundedRectangle(cornerRadius: 10).fill(Color(hex: 0xf0f3e9)))
+        .padding(.bottom, 18)
+      }
       Text("Stops").wallyText(17, .semibold, .ink, tracking: -0.4).padding(.bottom, 15)
       Label("\(route.walkingMinutes) min \(model.preferences.pace == .run ? "running" : "walking") · \(route.stopMinutes) min at stops · \(route.bufferMinutes) min buffer", systemImage: "clock")
         .labelStyle(StatLabel()).wallyText(11, .regular, Color(hex: 0x89917d)).padding(.top, -4)

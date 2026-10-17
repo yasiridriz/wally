@@ -90,3 +90,11 @@ Debug builds accept these launch arguments for screenshot checks. Release builds
 | `-WallySummaryCard 1` | Opens the walk preview on the first stop card. |
 
 Example: `xcrun simctl launch booted com.jasir.wally -WallyAutoGenerate YES -WallyScrollTo summary`.
+
+## Path history and reviews
+
+Tapped routes are kept in path history (`UserDefaults`, key `wally:history:v1`); the next search penalises routes similar to ones you opened (`WallyCore/Memory.swift`, the same weights as `src/lib/memory.ts`). The clock button in the header opens History, where routes can be rated 1–5 stars or favourited; the selected route has the same controls above its stops. The **Favourites** toggle in the planner adds favourite stops to discovery and strongly prefers favourite routes. Reviews of live routes are appended to `Application Support/Wally/reviews.jsonl` in the web store's version-1 format (`WallyCore/Reviews.swift`), ready to export or upload. The app has no server, so `GenerateRequest.ratings` (everyone's averages) stays empty until a review source is connected.
+
+## Long walks, loops and far destinations
+
+Durations are any whole minute from 5 to 480 (`WalkDuration`), set with the presets or the ±5 buttons; discovery grows with the time up to the 50 km Places limit. Loops that would come home over their own outbound path are routed once more through a pass-through return point (`returnViaPoint`). A destination that cannot be reached in the time returns the direct route marked `overBudget`, drawn with a red outline, with the extra minutes in red and a red notice above the results.

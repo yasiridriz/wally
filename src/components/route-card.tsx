@@ -1,34 +1,44 @@
 "use client";
 
-import { Check, CheckCheck, Clock3, Flag, Footprints, MapPin } from "lucide-react";
+import { Check, CheckCheck, Clock3, Flag, Footprints, MapPin, TriangleAlert } from "lucide-react";
 import { plannedVisitMinutes } from "@/lib/geo/scoring";
 import { matchReason } from "@/lib/route-labels";
 import type { WanderRoute } from "@/lib/types";
 import EventDetour from "./event-detour";
+import { FavouriteButton, StarRating } from "./path-history";
 import type { Planner } from "./use-planner";
 
 export const ROUTE_COLORS = ["#266b58", "#c77c45", "#6888a4"];
+/** Outline and time colour for a route that takes longer than the chosen time. */
+export const OVER_BUDGET_COLOR = "#c62828";
 export const routeColor = (index: number) => ROUTE_COLORS[index % ROUTE_COLORS.length];
 
 /** A route option. The selected card expands to its itinerary; it never nests another card. */
 export default function RouteCard({ route, index, selected, planner }: { route: WanderRoute; index: number; selected: boolean; planner: Planner }) {
   const sample = route.source === "demo";
+  const remembered = planner.historyFor(route);
+  const over = Boolean(route.overBudget);
+  const overBy = route.totalMinutes - planner.preferences.duration;
   const detailsId = `route-details-${index}`;
-  return <article className={`route-card ${selected ? "selected" : ""}`} style={{ "--route-color": routeColor(index) } as React.CSSProperties}>
+  return <article className={`route-card ${selected ? "selected" : ""} ${over ? "over-budget" : ""}`} style={{ "--route-color": routeColor(index) } as React.CSSProperties}>
     <button type="button" className="route-card-main" onClick={() => planner.selectRoute(route.id)} aria-expanded={selected} aria-controls={detailsId}>
       <span className="route-title-row"><span className="route-swatch" aria-hidden="true" /><span className="route-name">{route.name}</span>{sample ? <span className="sample-badge">SAMPLE DATA</span> : null}</span>
-      <span className="route-stats"><span><Clock3 size={13} />{route.totalMinutes} min</span><span><Footprints size={13} />{(route.distanceMeters / 1000).toFixed(1)} km</span><span><MapPin size={13} />{route.stops.length} {route.stops.length === 1 ? "stop" : "stops"}</span></span>
+      <span className="route-stats"><span className={over ? "over-time" : undefined}><Clock3 size={13} />{route.totalMinutes} min{over ? ` · ${overBy} min over your ${planner.preferences.duration}` : ""}</span><span><Footprints size={13} />{(route.distanceMeters / 1000).toFixed(1)} km</span><span><MapPin size={13} />{route.stops.length} {route.stops.length === 1 ? "stop" : "stops"}</span></span>
       <span className="route-description">{route.description}</span>
-      <span className="route-pills">
+      {over ? <span className="route-pills"><span className="pill over"><TriangleAlert size={12} aria-hidden="true" />Takes longer than your time</span></span> : <span className="route-pills">
         <span className="pill match">{matchReason(route, planner.preferences.moods)}</span>
         <span className="pill score">Wander score {Math.round(route.score)}</span>
         {route.event ? <span className="pill sample">Sample event</span> : null}
         {route.highlights.slice(0, 3).map(highlight => <span key={highlight} className="pill">{highlight}</span>)}
-      </span>
+      </span>}
     </button>
     {selected ? <div id={detailsId} className="route-details">
-      <p className="time-breakdown"><Clock3 size={14} />{route.walkingMinutes} min {route.pace === "run" ? "running" : "walking"} · {route.stopMinutes} min at stops · {route.bufferMinutes} min buffer</p>
+      <p className={`time-breakdown ${over ? "over-time" : ""}`}><Clock3 size={14} />{route.walkingMinutes} min {route.pace === "run" ? "running" : "walking"} · {route.stopMinutes} min at stops · {route.bufferMinutes} min buffer</p>
       <p className="route-shape-note">{route.isLoop ? "Returns to your start." : route.destination ? "Finishes at your destination." : "Finishes at the last stop."} {route.pace === "run" ? "Running" : "Walking"} and stops included.</p>
+      {over ? null : <div className="route-review">
+        <StarRating value={remembered?.rating} onRate={rating => planner.reviewRoute(route, { rating })} label={`Rate ${route.name}`} disabled={Boolean(planner.preview)} />
+        <FavouriteButton on={Boolean(remembered?.favourite)} onToggle={() => planner.reviewRoute(route, { favourite: !remembered?.favourite })} disabled={Boolean(planner.preview)} />
+      </div>}
       {route.stops.some(stop => stop.suggestedActivity) ? <p className="activity-note">Activities are suggestions. Check access and opening hours.</p> : null}
       <ol className="itinerary">
         {route.stops.map((stop, stopIndex) => <li key={stop.id}>
@@ -49,7 +59,7 @@ export default function RouteCard({ route, index, selected, planner }: { route: 
           <div><span className="stop-category">Your destination</span><h3>{sample ? "National Museum of Scotland" : planner.destination?.label || "Your chosen finish"}</h3><p>This endpoint is included in your walking estimate.</p></div>
         </li> : null}
       </ol>
-      {planner.preferences.includeEvents && !route.event ? <EventDetour planner={planner} /> : null}
+      {planner.preferences.includeEvents && !route.event && !over ? <EventDetour planner={planner} /> : null}
     </div> : null}
   </article>;
 }

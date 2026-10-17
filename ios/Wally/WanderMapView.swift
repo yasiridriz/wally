@@ -86,11 +86,20 @@ struct WanderMapView: UIViewRepresentable {
       for (index, route) in routes.enumerated() {
         let path = GMSMutablePath()
         route.geometry.forEach { path.add(CLLocationCoordinate2D(latitude: $0.lat, longitude: $0.lng)) }
-        let line = GMSPolyline(path: path)
         let isSelected = route.id == selected?.id
+        if route.overBudget {
+          // A red outline marks a route that takes longer than the chosen time.
+          let outline = GMSPolyline(path: path)
+          outline.strokeColor = UIColor(Color.danger)
+          outline.strokeWidth = isSelected ? 11 : 7
+          outline.zIndex = isSelected ? 2 : 1
+          outline.map = mapView
+          overlays.append(outline)
+        }
+        let line = GMSPolyline(path: path)
         line.strokeColor = UIColor(routeColor(index)).withAlphaComponent(isSelected ? 0.95 : 0.35)
         line.strokeWidth = isSelected ? 6 : 3
-        line.zIndex = isSelected ? 2 : 1
+        line.zIndex = (isSelected ? 2 : 1) + (route.overBudget ? 1 : 0)
         line.map = mapView
         overlays.append(line)
       }
