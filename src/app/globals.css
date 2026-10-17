@@ -72,6 +72,9 @@ button:disabled { cursor:not-allowed; opacity:.55; }
 .brand-tagline { margin-top:6px; font-size:13px; color:var(--muted); }
 .demo-pill { display:inline-flex; align-items:center; gap:5px; padding:5px 10px; border:1px solid var(--line-strong); border-radius:999px; background:var(--surface); color:var(--muted); font-size:11px; font-weight:600; letter-spacing:.2px; }
 .demo-pill.on { background:var(--clay-tint); border-color:#e5c8ab; color:var(--clay-text); }
+.pace-pill { display:inline-flex; align-items:center; gap:5px; padding:5px 10px; border:1px solid var(--line-strong); border-radius:999px; background:var(--surface); color:var(--forest); font-size:11px; font-weight:600; letter-spacing:.2px; transition:background .2s, border-color .2s, color .2s; }
+.pace-pill.on { background:var(--forest); border-color:var(--forest); color:var(--surface); }
+.panel-header-actions { display:flex; align-items:center; gap:6px; }
 .legal-links { display:flex; justify-content:center; gap:14px; margin-top:28px; font-size:12px; color:var(--muted); }
 .legal-links a { text-underline-offset:3px; }
 
@@ -222,8 +225,21 @@ button:disabled { cursor:not-allowed; opacity:.55; }
 .results-anchor { scroll-margin-top:12px; }
 
 /* ---------- Phone ---------- */
-.phone-top { position:absolute; z-index:5; top:calc(env(safe-area-inset-top, 0px) + 10px); left:10px; right:10px; }
-.phone-card { display:flex; flex-direction:column; gap:10px; padding:12px 14px 14px; background:var(--surface); border:1px solid var(--line); border-radius:var(--radius-float); box-shadow:var(--shadow); }
+.phone-top { position:absolute; z-index:5; top:calc(env(safe-area-inset-top, 0px) + 8px); left:10px; right:10px; }
+.phone-card { display:flex; flex-direction:column; gap:7px; padding:8px 12px 12px; background:var(--surface); border:1px solid var(--line); border-radius:var(--radius-float); box-shadow:var(--shadow); }
+/* A shorter top card leaves more of the map visible. */
+.phone-card .brand.compact .wordmark { font-size:21px; }
+.phone-card .brand-mark { width:22px; height:22px; }
+.phone-card .icon-link { width:28px; height:28px; }
+.phone-card .time-selector.compact { gap:6px; }
+.phone-card .time-selector.compact .time-number { font-size:36px; letter-spacing:-1px; }
+.phone-card .time-selector.compact .round-button { width:32px; height:32px; }
+.phone-card .time-selector.compact .preset { min-height:28px; padding:4px 0; }
+.phone-card .time-selector.compact .time-hint { font-size:11.5px; }
+.phone-card .row-label { min-height:22px; }
+.phone-card .route-row .field { min-height:36px; }
+.phone-card .route-row .field input { height:34px; }
+.phone-card .tags-button,.phone-card .generate-button.compact { height:42px; }
 .phone-brand { display:flex; align-items:center; justify-content:space-between; gap:8px; }
 .phone-brand-actions { display:flex; align-items:center; gap:4px; }
 .icon-link { display:grid; place-items:center; width:32px; height:32px; border:0; border-radius:10px; background:transparent; color:var(--muted); }

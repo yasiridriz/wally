@@ -2,11 +2,10 @@
 
 import { useEffect, useRef, useState } from "react";
 import { CalendarDays, Check, ChevronDown, Compass, Landmark, Leaf, Sparkles, Tag, Trees } from "lucide-react";
-import type { Mood } from "@/lib/types";
+import type { MoodTag } from "@/lib/types";
 import type { Planner } from "./use-planner";
 
-type Choosable = Exclude<Mood, "surprise">;
-const moods: { value: Choosable; label: string; icon: typeof Leaf }[] = [
+const moodOptions: { value: MoodTag; label: string; icon: typeof Leaf }[] = [
   { value: "scenic", label: "Scenic", icon: Leaf },
   { value: "green", label: "Green & peaceful", icon: Trees },
   { value: "historic", label: "Historic", icon: Landmark },
@@ -15,20 +14,20 @@ const moods: { value: Choosable; label: string; icon: typeof Leaf }[] = [
 const EVENTS_LABEL = "Sample event detours";
 
 function Heading({ id }: { id?: string }) {
-  return <div className="tags-heading"><h2 id={id} className="section-title">What are you in the mood for?</h2><p>Fine-tune your route. All optional.</p></div>;
+  return <div className="tags-heading"><h2 id={id} className="section-title">What are you in the mood for?</h2><p>Pick as many as you like. All optional.</p></div>;
 }
 
-/** Desktop: wrapping chips. One mood at a time; event detours toggle on their own. */
+/** Desktop: wrapping chips. Moods combine; with none selected it is Surprise me. */
 export function PreferenceChips({ planner }: { planner: Planner }) {
-  const { mood, includeEvents } = planner.preferences;
+  const { moods, includeEvents } = planner.preferences;
   const chip = (key: string, label: string, Icon: typeof Leaf, on: boolean, onClick: () => void) =>
     <button key={key} type="button" className={`chip ${on ? "on" : ""}`} aria-pressed={on} disabled={planner.loading} onClick={onClick}>{on ? <Check size={14} /> : <Icon size={14} />}{label}</button>;
   return <section className="tags" aria-labelledby="tags-heading">
     <Heading id="tags-heading" />
     <div className="chips">
-      {moods.map(({ value, label, icon }) => chip(value, label, icon, mood === value, () => planner.toggleMood(value)))}
+      {moodOptions.map(({ value, label, icon }) => chip(value, label, icon, moods.includes(value), () => planner.toggleMood(value)))}
       {chip("events", EVENTS_LABEL, CalendarDays, includeEvents, planner.toggleEvents)}
-      <button type="button" className={`chip surprise ${mood === "surprise" ? "on" : ""}`} aria-pressed={mood === "surprise"} disabled={planner.loading} onClick={planner.surpriseMe}><Sparkles size={14} />Surprise me</button>
+      <button type="button" className={`chip surprise ${!moods.length ? "on" : ""}`} aria-pressed={!moods.length} disabled={planner.loading} onClick={planner.surpriseMe}><Sparkles size={14} />Surprise me</button>
       {planner.tagCount ? <button type="button" className="text-link" onClick={planner.resetTags} disabled={planner.loading}>Reset</button> : null}
     </div>
   </section>;
@@ -39,7 +38,7 @@ export function PreferenceMenu({ planner }: { planner: Planner }) {
   const [open, setOpen] = useState(false);
   const button = useRef<HTMLButtonElement>(null);
   const menu = useRef<HTMLDivElement>(null);
-  const { mood, includeEvents } = planner.preferences;
+  const { moods, includeEvents } = planner.preferences;
 
   useEffect(() => {
     if (!open) return;
@@ -60,11 +59,11 @@ export function PreferenceMenu({ planner }: { planner: Planner }) {
     {open ? <div ref={menu} className="tags-dropdown" role="dialog" aria-label="Preference tags">
       <Heading />
       <ul className="menu-list">
-        {moods.map(({ value, label, icon }) => row(value, label, icon, mood === value, () => planner.toggleMood(value)))}
+        {moodOptions.map(({ value, label, icon }) => row(value, label, icon, moods.includes(value), () => planner.toggleMood(value)))}
         {row("events", EVENTS_LABEL, CalendarDays, includeEvents, planner.toggleEvents)}
       </ul>
       <div className="menu-footer">
-        <button type="button" className={`chip surprise ${mood === "surprise" ? "on" : ""}`} aria-pressed={mood === "surprise"} onClick={planner.surpriseMe} disabled={planner.loading}><Sparkles size={14} />Surprise me</button>
+        <button type="button" className={`chip surprise ${!moods.length ? "on" : ""}`} aria-pressed={!moods.length} onClick={planner.surpriseMe} disabled={planner.loading}><Sparkles size={14} />Surprise me</button>
         {planner.tagCount ? <button type="button" className="text-link" onClick={planner.resetTags} disabled={planner.loading}>Reset</button> : null}
       </div>
     </div> : null}

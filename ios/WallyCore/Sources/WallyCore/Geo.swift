@@ -13,8 +13,9 @@ public func distanceMeters(_ a: Coordinates, _ b: Coordinates) -> Double {
   return 6_371_000 * 2 * atan2(sqrt(h), sqrt(max(0, 1 - h)))
 }
 
-public func searchRadius(_ duration: Int, isLoop: Bool) -> Double {
-  (min(3500, max(350, Double(duration - 6) * 65 / (isLoop ? 2.4 : 1.5)))).rounded()
+/// `speed` scales the ground covered per minute, e.g. 2.25 when running.
+public func searchRadius(_ duration: Int, isLoop: Bool, speed: Double = 1) -> Double {
+  (min(3500 * speed, max(350, Double(duration - 6) * 65 * speed / (isLoop ? 2.4 : 1.5)))).rounded()
 }
 
 public func pathDistance(_ points: [Coordinates]) -> Double {

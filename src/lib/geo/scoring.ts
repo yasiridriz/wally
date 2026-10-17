@@ -1,24 +1,50 @@
-import type { Mood, Place, WanderRoute } from "../types";
+import type { MoodTag, Place, WanderRoute } from "../types";
 
 const clamp = (n: number) => Math.min(100, Math.max(0, n));
-const matches: Record<Mood, Place["category"][]> = {
-  surprise: ["park", "viewpoint", "historic", "art", "attraction", "path"],
+const matches: Record<MoodTag, Place["category"][]> = {
   scenic: ["viewpoint", "park", "path"], green: ["park", "path"],
   historic: ["historic"], hidden: ["art", "path"],
 };
 
-export function preferenceScore(place: Place, mood: Mood): number {
-  return mood === "surprise" ? 75 : matches[mood].includes(place.category) ? 100 : 30;
+export function matchesMood(place: Place, mood: MoodTag): boolean {
+  return matches[mood].includes(place.category);
 }
 
-export function scorePlaces(stops: Place[], mood: Mood, visitedIds: string[], eventRelevance?: number): number {
+/** No tags is Surprise me; otherwise a place scores fully when it fits any selected tag. */
+export function preferenceScore(place: Place, moods: readonly MoodTag[]): number {
+  return !moods.length ? 75 : moods.some((mood) => matchesMood(place, mood)) ? 100 : 30;
+}
+
+/** Share of the selected tags that at least one stop satisfies, 0 to 100. */
+export function moodCoverage(stops: Place[], moods: readonly MoodTag[]): number {
+  if (!moods.length) return 100;
+  return moods.filter((mood) => stops.some((place) => matchesMood(place, mood))).length / moods.length * 100;
+}
+
+/**
+ * Keeps the strongest places for every selected tag in the shortlist, so a
+ * minority tag is not crowded out before candidate walks are combined.
+ * Original order is preserved; with no tags this is a plain slice.
+ */
+export function shortlistForMoods(places: Place[], moods: readonly MoodTag[], limit = 20): Place[] {
+  if (moods.length < 2 || places.length <= limit) return places.slice(0, limit);
+  const keep = new Set<Place>();
+  const perMood = Math.max(2, Math.floor(limit / (moods.length + 1)));
+  for (const mood of moods) places.filter((place) => matchesMood(place, mood)).slice(0, perMood).forEach((place) => keep.add(place));
+  for (const place of places) { if (keep.size >= limit) break; keep.add(place); }
+  return places.filter((place) => keep.has(place));
+}
+
+export function scorePlaces(stops: Place[], moods: readonly MoodTag[], visitedIds: string[], eventRelevance?: number): number {
   if (!stops.length) return 0;
   const average = (fn: (place: Place) => number) => stops.reduce((sum, place) => sum + fn(place), 0) / stops.length;
   const scenic = average((place) => clamp(place.baseScenicScore));
   const visited = new Set(visitedIds);
   const novelty = average((place) => visited.has(place.id) ? 15 : place.category === "art" || place.category === "path" ? 95 : 80);
   const variety = Math.min(100, new Set(stops.map((place) => place.category)).size / Math.min(3, stops.length) * 100);
-  const preference = average((place) => preferenceScore(place, mood));
+  // With several tags, a walk that touches each of them beats one that repeats a single tag.
+  const fit = average((place) => preferenceScore(place, moods));
+  const preference = moods.length > 1 ? fit * .5 + moodCoverage(stops, moods) * .5 : fit;
   const base = scenic * .30 + novelty * .25 + variety * .15 + preference * .20;
   return Math.round(eventRelevance === undefined ? base / .9 : base + clamp(eventRelevance) * .10);
 }

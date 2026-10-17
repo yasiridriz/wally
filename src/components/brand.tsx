@@ -1,5 +1,6 @@
 import Link from "next/link";
-import { FlaskConical } from "lucide-react";
+import { FlaskConical, Footprints, Zap } from "lucide-react";
+import type { Pace } from "@/lib/types";
 
 /** A rounded square with a meandering dotted path from a start dot to an end dot. */
 export function BrandMark({ size = 32 }: { size?: number }) {
@@ -21,6 +22,14 @@ export function Brand({ compact = false, tagline = false }: { compact?: boolean;
 export function DemoToggle({ on, onToggle, disabled }: { on: boolean; onToggle: () => void; disabled?: boolean }) {
   return <button type="button" className={`demo-pill ${on ? "on" : ""}`} aria-pressed={on} onClick={onToggle} disabled={disabled} title={on ? "Sample Edinburgh walks are on" : "Use sample Edinburgh walks"}>
     <FlaskConical size={12} aria-hidden="true" />Demo
+  </button>;
+}
+
+/** Switches the planner between walking and running pace. */
+export function PaceToggle({ pace, onToggle, disabled }: { pace: Pace; onToggle: () => void; disabled?: boolean }) {
+  const run = pace === "run";
+  return <button type="button" className={`pace-pill ${run ? "on" : ""}`} aria-pressed={run} onClick={onToggle} disabled={disabled} title={run ? "Running: switch to walking" : "Walking: switch to running"} aria-label={run ? "Running pace on. Switch to walking" : "Switch to running pace"}>
+    {run ? <Zap size={12} aria-hidden="true" /> : <Footprints size={12} aria-hidden="true" />}{run ? "Run" : "Walk"}
   </button>;
 }
 

@@ -4,27 +4,36 @@ import { clampDuration, durationHint, friendlyDuration, isDuration } from './dur
 
 describe('preferences', () => {
   it('defaults to 30 minutes, finishing anywhere, with Surprise me', () => {
-    expect(DEFAULT_PREFERENCES).toMatchObject({ duration: 30, shape: 'elsewhere', mood: 'surprise', includeEvents: false });
+    expect(DEFAULT_PREFERENCES).toMatchObject({ duration: 30, shape: 'elsewhere', moods: [], includeEvents: false });
   });
   it.each([['loop', 'loop'], ['destination', 'elsewhere'], ['explore', 'elsewhere']] as const)('migrates a v2 %s preference to %s', (mode, shape) => {
     expect(restorePreferences({ version: 2, duration: 45, mood: 'green', mode, includeEvents: true }, true))
-      .toEqual({ duration: 45, mood: 'green', shape, includeEvents: true, demo: false });
+      .toEqual({ duration: 45, moods: ['green'], shape, includeEvents: true, demo: false, pace: 'walk' });
   });
   it('keeps an unversioned legacy budget and mood with the default shape', () => {
-    expect(restorePreferences({ duration: 90, mood: 'scenic', mode: 'destination' }, true)).toMatchObject({ duration: 90, mood: 'scenic', shape: 'elsewhere' });
+    expect(restorePreferences({ duration: 90, mood: 'scenic', mode: 'destination' }, true)).toMatchObject({ duration: 90, moods: ['scenic'], shape: 'elsewhere' });
   });
-  it.each(['loop', 'elsewhere'] as const)('round-trips a v3 %s preference with any whole-minute duration', shape => {
+  it.each(['loop', 'elsewhere'] as const)('round-trips a v4 %s preference with any whole-minute duration', shape => {
     expect(restorePreferences(persistablePreferences({ ...DEFAULT_PREFERENCES, shape, duration: 52 }), true)).toMatchObject({ shape, duration: 52 });
+  });
+  it('round-trips several mood tags and migrates a v3 single mood', () => {
+    expect(restorePreferences(persistablePreferences({ ...DEFAULT_PREFERENCES, moods: ['scenic', 'historic'] }), true).moods).toEqual(['scenic', 'historic']);
+    expect(restorePreferences({ version: 3, duration: 30, mood: 'hidden', shape: 'loop' }, true)).toMatchObject({ moods: ['hidden'], shape: 'loop' });
+    expect(restorePreferences({ version: 3, duration: 30, mood: 'surprise', shape: 'loop' }, true).moods).toEqual([]);
+  });
+  it('remembers running pace and treats anything else as walking', () => {
+    expect(restorePreferences(persistablePreferences({ ...DEFAULT_PREFERENCES, pace: 'run' }), true).pace).toBe('run');
+    expect(restorePreferences({ ...persistablePreferences(DEFAULT_PREFERENCES), pace: 'sprint' }, true).pace).toBe('walk');
   });
   it('ignores a saved demo flag once credentials are configured, and stays in demo without them', () => {
     expect(restorePreferences({ ...persistablePreferences(DEFAULT_PREFERENCES), demo: true }, true).demo).toBe(false);
     expect(restorePreferences(persistablePreferences(DEFAULT_PREFERENCES), false).demo).toBe(true);
   });
-  it.each([null, [], {}, { version: 3, duration: 4, mood: 'surprise', shape: 'loop' }, { version: 3, duration: 52.5, mood: 'surprise', shape: 'loop' }, { version: 3, duration: 30, mood: 'surprise', shape: 'arbitrary' }, { version: 2, duration: 30, mood: 'surprise', mode: 'arbitrary' }])('uses safe defaults for invalid stored data', raw => {
+  it.each([null, [], {}, { version: 3, duration: 4, mood: 'surprise', shape: 'loop' }, { version: 3, duration: 52.5, mood: 'surprise', shape: 'loop' }, { version: 3, duration: 30, mood: 'surprise', shape: 'arbitrary' }, { version: 2, duration: 30, mood: 'surprise', mode: 'arbitrary' }, { version: 4, duration: 30, moods: ['nope'], shape: 'loop' }, { version: 4, duration: 30, moods: 'scenic', shape: 'loop' }])('uses safe defaults for invalid stored data', raw => {
     expect(restorePreferences(raw, true)).toEqual(DEFAULT_PREFERENCES);
   });
   it('stores walking preferences without making Demo Mode sticky', () => {
-    expect(persistablePreferences({ ...DEFAULT_PREFERENCES, demo: true })).toEqual({ version: 3, duration: 30, mood: 'surprise', shape: 'elsewhere', includeEvents: false });
+    expect(persistablePreferences({ ...DEFAULT_PREFERENCES, demo: true })).toEqual({ version: 4, duration: 30, moods: [], shape: 'elsewhere', includeEvents: false, pace: 'walk' });
   });
 });
 

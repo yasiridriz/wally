@@ -32,9 +32,34 @@ final class ScoringTests: XCTestCase {
 
   func testMoodScoringAndVisitedNovelty() {
     let park = place("park")
-    XCTAssertEqual(preferenceScore(park, .green), 100)
-    XCTAssertEqual(preferenceScore(park, .historic), 30)
-    XCTAssertGreaterThan(scorePlaces([park], mood: .green, visitedIds: []), scorePlaces([park], mood: .green, visitedIds: ["park"]))
+    XCTAssertEqual(preferenceScore(park, [.green]), 100)
+    XCTAssertEqual(preferenceScore(park, [.historic]), 30)
+    XCTAssertEqual(preferenceScore(park, [.historic, .green]), 100)
+    XCTAssertEqual(preferenceScore(park, []), 75)
+    XCTAssertGreaterThan(scorePlaces([park], moods: [.green], visitedIds: []), scorePlaces([park], moods: [.green], visitedIds: ["park"]))
+  }
+
+  func testRunningCoversGroundFasterAndSearchesFurther() {
+    XCTAssertGreaterThan(searchRadius(30, isLoop: true, speed: Pace.run.speed), searchRadius(30, isLoop: true) * 2)
+    XCTAssertEqual(searchRadius(90, isLoop: false, speed: Pace.run.speed), (3500 * Pace.runSpeed).rounded())
+    let walk = demoRouteSamples(GenerateRequest(start: demoStart, duration: .m90, mode: .loop))
+    let run = demoRouteSamples(GenerateRequest(start: demoStart, duration: .m90, mode: .loop, pace: .run))
+    XCTAssertFalse(run.isEmpty)
+    for route in run {
+      guard let walked = walk.first(where: { $0.id == route.id }) else { continue }
+      XCTAssertLessThanOrEqual(route.walkingMinutes, Int((Double(walked.walkingMinutes) / 2).rounded(.up)))
+    }
+  }
+
+  func testMultipleMoodsFavourCoverageAndKeepMinorityTags() {
+    let mixed = [place("a", category: .park), place("b", category: .historic)]
+    let parks = [place("c", category: .park), place("d", category: .park)]
+    XCTAssertGreaterThan(scorePlaces(mixed, moods: [.green, .historic], visitedIds: []), scorePlaces(parks, moods: [.green, .historic], visitedIds: []))
+    let places = (0..<24).map { place("p\($0)", category: .park) } + [place("h1", category: .historic), place("h2", category: .historic)]
+    let shortlist = shortlistForMoods(places, [.green, .historic])
+    XCTAssertEqual(shortlist.count, 20)
+    XCTAssertTrue(Set(shortlist.map(\.id)).isSuperset(of: ["h1", "h2"]))
+    XCTAssertEqual(shortlistForMoods(places, []).map(\.id), places.prefix(20).map(\.id))
   }
 }
 
@@ -47,7 +72,7 @@ final class CandidateTests: XCTestCase {
   }
 
   func testLoopCandidatesStayInsideTheHeadroom() {
-    let request = GenerateRequest(start: start, duration: .m30, mood: .surprise, mode: .loop)
+    let request = GenerateRequest(start: start, duration: .m30, mode: .loop)
     let pool = loopCandidatePool(ring(8, meters: 500), request)
     XCTAssertFalse(pool.isEmpty)
     for candidate in pool {
@@ -57,7 +82,7 @@ final class CandidateTests: XCTestCase {
   }
 
   func testTargetedCandidatesMayUseOneStopAndShortlistIsDistinct() {
-    let request = GenerateRequest(start: start, duration: .m30, mood: .scenic, mode: .destination, destination: offset(start, meters: 900, degrees: 90))
+    let request = GenerateRequest(start: start, duration: .m30, moods: [.scenic], mode: .destination, destination: offset(start, meters: 900, degrees: 90))
     let pool = openCandidatePool(ring(6, meters: 400), request)
     XCTAssertTrue(pool.contains { $0.stops.count == 1 })
     let shortlist = shortlistCandidates(ring(6, meters: 400), request)
@@ -113,7 +138,7 @@ final class DemoAndEventTests: XCTestCase {
   func testDemoRoutesFitTheBudgetAndTargetedFinishesAtTheMuseum() {
     for mode in RouteMode.allCases {
       for duration in WalkDuration.allCases {
-        for route in generateDemoRoutes(GenerateRequest(start: demoStart, duration: duration, mood: .surprise, mode: mode)) {
+        for route in generateDemoRoutes(GenerateRequest(start: demoStart, duration: duration, mode: mode)) {
           XCTAssertTrue(durationTimeFit(route.totalMinutes, duration.rawValue))
           XCTAssertEqual(route.source, .demo)
           if mode == .destination { XCTAssertEqual(route.destination, demoDestination) }
@@ -124,7 +149,7 @@ final class DemoAndEventTests: XCTestCase {
 
   /// Totals measured from the web `generateDemoRoutes`, so both apps offer the same samples.
   func testDemoTotalsMatchTheWebApp() {
-    func totals(_ mode: RouteMode, _ duration: WalkDuration) -> [Int] { generateDemoRoutes(GenerateRequest(start: demoStart, duration: duration, mood: .surprise, mode: mode)).map(\.totalMinutes) }
+    func totals(_ mode: RouteMode, _ duration: WalkDuration) -> [Int] { generateDemoRoutes(GenerateRequest(start: demoStart, duration: duration, mode: mode)).map(\.totalMinutes) }
     XCTAssertEqual(totals(.loop, .m15), [14])
     XCTAssertEqual(totals(.destination, .m15), [15])
     for duration in [WalkDuration.m30, .m45, .m60, .m90] { XCTAssertEqual(totals(.loop, duration), []); XCTAssertEqual(totals(.destination, duration), []) }
@@ -141,9 +166,16 @@ final class DemoAndEventTests: XCTestCase {
 
   func testPreferencesMigrateLegacyModeAndNeverPersistDemo() {
     let legacy = try! JSONSerialization.data(withJSONObject: ["duration": 45, "mood": "green", "mode": "explore", "includeEvents": true])
-    XCTAssertEqual(Preferences.restore(legacy, hasLiveSetup: true), Preferences(duration: .m45, mood: .green, mode: .loop, includeEvents: true, demo: false))
-    let saved = Preferences(duration: .m60, mood: .hidden, mode: .explore, demo: true).persistable()
+    XCTAssertEqual(Preferences.restore(legacy, hasLiveSetup: true), Preferences(duration: .m45, moods: [.green], mode: .loop, includeEvents: true, demo: false))
+    let saved = Preferences(duration: .m60, moods: [.historic, .scenic], mode: .explore, demo: true).persistable()
     XCTAssertEqual(Preferences.restore(saved, hasLiveSetup: true).mode, .explore)
+    XCTAssertEqual(Preferences.restore(saved, hasLiveSetup: true).moods, [.scenic, .historic])
+    XCTAssertEqual(Preferences.restore(Preferences(pace: .run).persistable(), hasLiveSetup: true).pace, .run)
+    XCTAssertEqual(Preferences.restore(saved, hasLiveSetup: true).pace, .walk)
+    let v2 = try! JSONSerialization.data(withJSONObject: ["version": 2, "duration": 30, "mood": "surprise", "mode": "explore"])
+    XCTAssertEqual(Preferences.restore(v2, hasLiveSetup: true).moods, [])
+    let bad = try! JSONSerialization.data(withJSONObject: ["version": 3, "duration": 30, "moods": ["nope"], "mode": "loop"])
+    XCTAssertEqual(Preferences.restore(bad, hasLiveSetup: true), Preferences.defaults)
     XCTAssertFalse(String(data: saved, encoding: .utf8)!.contains("demo"))
     XCTAssertTrue(Preferences.restore(Data("bad".utf8), hasLiveSetup: false).demo)
   }

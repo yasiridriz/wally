@@ -1,6 +1,7 @@
 import type { Coordinates, GenerateRequest, Place } from "../types";
 import { distanceMeters, pathDistance } from "./coordinates";
-import { estimateExperienceWithStops, scorePlaces, stopOverlap } from "./scoring";
+import { paceSpeed } from "../pace";
+import { estimateExperienceWithStops, moodCoverage, scorePlaces, shortlistForMoods, stopOverlap } from "./scoring";
 
 export type ScenicCandidate = { stops: Place[]; geographicMeters: number; key: string; spread: number };
 
@@ -16,7 +17,7 @@ function orderLoop(stops: Place[], start: Coordinates): Place[] {
 }
 
 export function loopCandidatePool(places: Place[], request: GenerateRequest): ScenicCandidate[] {
-  const available = places.filter((place) => distanceMeters(request.start, place) > 50).slice(0, 20);
+  const available = shortlistForMoods(places.filter((place) => distanceMeters(request.start, place) > 50), request.moods);
   const pool: ScenicCandidate[] = [];
   const seen = new Set<string>();
   function add(stops: Place[]) {
@@ -28,7 +29,8 @@ export function loopCandidatePool(places: Place[], request: GenerateRequest): Sc
     const geographicMeters = pathDistance([request.start, ...ordered, request.start]);
     // Initial walking model: network factor1.25 / walking speed1.25m/s.
     // Leave 25% headroom because the actual provider decides feasibility.
-    const estimate = estimateExperienceWithStops(geographicMeters, ordered);
+    // Running covers the same ground paceSpeed times faster.
+    const estimate = estimateExperienceWithStops(geographicMeters / paceSpeed(request.pace), ordered);
     if (geographicMeters < 180 || estimate.totalMinutes > request.duration * 1.25) return;
     const outward = Math.max(...stops.map((place) => distanceMeters(request.start, place)));
     const connecting = pathDistance(ordered);
@@ -56,12 +58,15 @@ export function loopCandidatePool(places: Place[], request: GenerateRequest): Sc
 export function chooseCandidate(pool: ScenicCandidate[], request: GenerateRequest, selected: ScenicCandidate[], secondsPerMeter = 1, targetFraction = .97): ScenicCandidate | undefined {
   const used = new Set(selected.map((candidate) => candidate.key));
   function merit(candidate: ScenicCandidate): number {
-    const estimated = estimateExperienceWithStops(candidate.geographicMeters * secondsPerMeter, candidate.stops).totalMinutes;
+    // secondsPerMeter is calibrated on walking times; running divides the travel part.
+    const estimated = estimateExperienceWithStops(candidate.geographicMeters * secondsPerMeter / paceSpeed(request.pace), candidate.stops).totalMinutes;
     const target = request.duration * targetFraction;
     const closeness = Math.abs(estimated - target) / request.duration;
     const overlap = selected.length ? Math.max(...selected.map((other) => stopOverlap(candidate.stops, other.stops))) : 0;
     const distanceFit = 250 * closeness + (estimated > request.duration ? 20 : 0);
-    return -distanceFit + scorePlaces(candidate.stops, request.mood, request.visitedIds) * .12 + candidate.spread * 8 - overlap * 12;
+    // Several tags: prefer combinations that visit a stop for each of them.
+    const coverage = request.moods.length > 1 ? moodCoverage(candidate.stops, request.moods) * .1 : 0;
+    return -distanceFit + scorePlaces(candidate.stops, request.moods, request.visitedIds) * .12 + candidate.spread * 8 + coverage - overlap * 12;
   }
   return pool.filter((candidate) => !used.has(candidate.key))
     .sort((a, b) => merit(b) - merit(a) || a.key.localeCompare(b.key))[0];

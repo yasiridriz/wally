@@ -9,7 +9,7 @@ import type { Event, GenerateRequest } from "./types";
 
 const departure = new Date("2026-10-17T10:00:00Z");
 const event: Event = { id: "sample", name: "Sample event", location: DEMO_START, startTime: "2026-10-17T10:10:00Z", endTime: "2026-10-17T10:40:00Z", visitMinutes: 8, category: "art", description: "Fictional", isSample: true };
-const request: GenerateRequest = { start: DEMO_START, duration: 30, mood: "surprise", mode: "loop", visitedIds: [], includeEvents: true, demo: true };
+const request: GenerateRequest = { start: DEMO_START, duration: 30, moods: [], mode: "loop", visitedIds: [], includeEvents: true, demo: true };
 
 describe("event feasibility", () => {
   it("counts waiting, the full visit and a safety buffer at the budget boundary", () => {
@@ -98,6 +98,15 @@ describe("Edinburgh samples", () => {
       }
     }
   });
+  it("halves demo travel time or better when running", () => {
+    const walk = demoRouteSamples({ ...request, duration: 180 });
+    const run = demoRouteSamples({ ...request, duration: 180, pace: "run" });
+    expect(run).toHaveLength(walk.length);
+    run.forEach((route, index) => {
+      expect(route.pace).toBe("run");
+      expect(route.walkingMinutes).toBeLessThanOrEqual(Math.ceil(walk[index].walkingMinutes / 2));
+    });
+  });
   it("changes scores for visited places and mood", () => {
     const first = demoRouteSamples(request);
     expect(first.length).toBeGreaterThan(0);
@@ -107,7 +116,7 @@ describe("Edinburgh samples", () => {
       const match = revisited.find((candidate) => candidate.id === route.id);
       if (match) expect(match.score).toBeLessThan(route.score);
     }
-    expect(demoRouteSamples({ ...request, mood: "historic" })).not.toEqual(demoRouteSamples({ ...request, mood: "green" }));
+    expect(demoRouteSamples({ ...request, moods: ["historic"] })).not.toEqual(demoRouteSamples({ ...request, moods: ["green"] }));
   });
   it.each([15, 30, 45, 60, 90] as const)("keeps a fixed museum destination within a %i-minute sample budget", duration => {
     const routes = generateDemoRoutes({ ...request, mode: "destination", destination: { lat: 0, lng: 0 }, duration });
@@ -129,7 +138,7 @@ describe("Edinburgh samples", () => {
 });
 
 describe("generation action boundaries", () => {
-  it.each([null, {}, { ...request, start: { lat: 91, lng: 0 } }, { ...request, start: { lat: 0, lng: Infinity } }, { ...request, duration: 181 }, { ...request, duration: 4 }, { ...request, duration: 52.5 }, { ...request, mood: "anything" }, { ...request, visitedIds: Array(501).fill("a") }, { ...request, includeEvents: "yes" }])("rejects invalid public input", async (input) => {
+  it.each([null, {}, { ...request, start: { lat: 91, lng: 0 } }, { ...request, start: { lat: 0, lng: Infinity } }, { ...request, duration: 181 }, { ...request, duration: 4 }, { ...request, duration: 52.5 }, { ...request, moods: ["anything"] }, { ...request, moods: "historic" }, { ...request, visitedIds: Array(501).fill("a") }, { ...request, includeEvents: "yes" }])("rejects invalid public input", async (input) => {
     expect(await generateRoutes(input)).toMatchObject({ ok: false, code: "INVALID_INPUT" });
   });
   it("uses the canonical fixed start for sample routes", async () => {

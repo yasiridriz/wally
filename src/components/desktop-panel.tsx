@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useRef } from "react";
-import { Brand, DemoToggle, LegalLinks } from "./brand";
+import { Brand, DemoToggle, LegalLinks, PaceToggle } from "./brand";
 import GenerateButton from "./generate-button";
 import LocationFields from "./location-fields";
 import { PreferenceChips } from "./preference-chips";
@@ -21,7 +21,7 @@ export default function DesktopPanel({ planner }: { planner: Planner }) {
   }, [planner.loading, hasRoutes]);
 
   return <aside className="desktop-panel" aria-label="Plan your walk">
-    <header className="panel-header"><Brand tagline /><DemoToggle on={planner.demo} onToggle={planner.toggleDemo} disabled={planner.loading} /></header>
+    <header className="panel-header"><Brand tagline /><span className="panel-header-actions"><DemoToggle on={planner.demo} onToggle={planner.toggleDemo} disabled={planner.loading} /><PaceToggle pace={planner.preferences.pace} onToggle={planner.togglePace} disabled={planner.loading} /></span></header>
     <div className="panel-scroll">
       <TimeSelector value={planner.preferences.duration} onChange={planner.setDuration} disabled={planner.loading} />
       <hr className="divider" />

@@ -9,7 +9,7 @@ struct ContentView: View {
   var body: some View {
     GeometryReader { proxy in
       let wide = proxy.size.width >= 768
-      let headerHeight: CGFloat = wide ? 90 : 72
+      let headerHeight: CGFloat = wide ? 90 : 56
       // The visible sheet height; the sheet also fills the bottom safe area below it.
       let sheetHeight = model.mobileExpanded ? proxy.size.height * 0.56 : 57
       ZStack(alignment: .topLeading) {
@@ -19,8 +19,8 @@ struct ContentView: View {
           .padding(.leading, wide ? (proxy.size.width >= 1500 ? 444 : 420) : 0)
           .padding(.bottom, wide ? 0 : sheetHeight)
         HeaderView(wide: wide, showTagline: proxy.size.width > 1000).frame(height: headerHeight)
-        if let caption = model.mapCaption { MapCaption(text: caption, wide: wide).padding(.top, wide ? 117 : 88).padding(.leading, wide ? 0 : 18).frame(maxWidth: wide ? .infinity : nil, alignment: .center).offset(x: wide ? 100 : 0) }
-        LocationButton(size: wide ? 40 : 35).padding(.top, wide ? 113 : 86).padding(.trailing, wide ? 27 : 17).frame(maxWidth: .infinity, alignment: .trailing)
+        if let caption = model.mapCaption { MapCaption(text: caption, wide: wide).padding(.top, wide ? 117 : 70).padding(.leading, wide ? 0 : 18).frame(maxWidth: wide ? .infinity : nil, alignment: .center).offset(x: wide ? 100 : 0) }
+        LocationButton(size: wide ? 40 : 35).padding(.top, wide ? 113 : 68).padding(.trailing, wide ? 27 : 17).frame(maxWidth: .infinity, alignment: .trailing)
         if wide {
           PlannerPanel(sheet: false).frame(width: proxy.size.width >= 1500 ? 398 : 374)
             .background(RoundedRectangle(cornerRadius: 20).fill(Color.cream).shadow(color: Color(hex: 0x304b3a, opacity: 0.09), radius: 19, y: 8))
@@ -56,25 +56,54 @@ struct HeaderView: View {
   var body: some View {
     HStack(spacing: wide ? 30 : 12) {
       HStack(spacing: 8) {
-        Image(systemName: "point.topleft.down.to.point.bottomright.curvepath").font(.system(size: wide ? 22 : 19, weight: .semibold)).foregroundStyle(Color.forest)
-          .rotationEffect(.degrees(-10)).frame(width: wide ? 35 : 29, height: wide ? 35 : 29)
+        Image(systemName: "point.topleft.down.to.point.bottomright.curvepath").font(.system(size: wide ? 22 : 16, weight: .semibold)).foregroundStyle(Color.forest)
+          .rotationEffect(.degrees(-10)).frame(width: wide ? 35 : 24, height: wide ? 35 : 24)
         (Text("wally").foregroundStyle(Color.ink) + Text(".").foregroundStyle(Color(hex: 0x9bab70)))
-          .font(.custom("Arial-BoldMT", size: wide ? 36 : 32)).tracking(-2)
+          .font(.custom("Arial-BoldMT", size: wide ? 36 : 26)).tracking(wide ? -2 : -1.5)
       }.accessibilityElement(children: .combine).accessibilityLabel("Wally home")
       if showTagline {
         Text("Take the scenic route to nowhere.").wallyText(11, .regular, Color(hex: 0x737c70), tracking: 0.1)
           .padding(.vertical, 6).padding(.leading, 27).overlay(alignment: .leading) { Rectangle().fill(Color(hex: 0xdaddd2)).frame(width: 1) }
       }
       Spacer(minLength: 0)
+      PaceToggle(wide: wide)
       if model.preferences.demo {
         Text("DEMO MODE").wallyText(wide ? 9 : 7, .semibold, Color(hex: 0x576d58), tracking: wide ? 1.2 : 0.8)
-          .padding(.vertical, wide ? 10 : 9).padding(.horizontal, wide ? 14 : 10).background(Capsule().fill(Color(hex: 0xedf0e5)))
+          .padding(.vertical, wide ? 10 : 7).padding(.horizontal, wide ? 14 : 10).background(Capsule().fill(Color(hex: 0xedf0e5)))
       }
     }
     .padding(.horizontal, wide ? 36 : 19)
     .frame(maxWidth: .infinity, maxHeight: .infinity)
     .background(Color.cream)
     .overlay(alignment: .bottom) { Rectangle().fill(Color(hex: 0xe8e9de)).frame(height: 1) }
+  }
+}
+
+/// Top-right toggle between walking and running pace. Running plans travel
+/// 2.25x faster, so the same time budget reaches further.
+struct PaceToggle: View {
+  @Environment(AppModel.self) private var model
+  var wide: Bool
+  var body: some View {
+    let run = model.preferences.pace == .run
+    Button {
+      var next = model.preferences
+      next.pace = run ? .walk : .run
+      model.changePreferences(next)
+    } label: {
+      HStack(spacing: 5) {
+        Image(systemName: run ? "figure.run" : "figure.walk").font(.system(size: wide ? 13 : 12, weight: .semibold))
+        Text(run ? "Run" : "Walk")
+      }
+      .wallyText(wide ? 11 : 10, .semibold, run ? .cream : .forest)
+      .padding(.vertical, wide ? 8 : 6).padding(.horizontal, wide ? 12 : 10)
+      .background(Capsule().fill(run ? Color.forest : Color.cream))
+      .overlay(Capsule().stroke(run ? Color.forest : Color(hex: 0xd6dccb), lineWidth: 1))
+    }
+    .buttonStyle(PressStyle())
+    .disabled(model.loading)
+    .accessibilityLabel(run ? "Running pace on. Switch to walking" : "Switch to running pace")
+    .accessibilityAddTraits(run ? .isSelected : [])
   }
 }
 

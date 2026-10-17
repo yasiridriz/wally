@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import type { Place, WanderRoute } from "../types";
-import { durationTimeFit, estimateExperience, estimateExperienceWithStops, estimateStopMinutes, fitsTimeBudget, loopTimeFit, rankLoopRoutes, rankTimeMatchedRoutes, rankRoutes, repetitionPenalty, scorePlaces, stopOverlap } from "./scoring";
-import { distanceMeters, isCoordinates, toLngLat } from "./coordinates";
+import { durationTimeFit, estimateExperience, estimateExperienceWithStops, estimateStopMinutes, fitsTimeBudget, loopTimeFit, rankLoopRoutes, rankTimeMatchedRoutes, rankRoutes, repetitionPenalty, scorePlaces, shortlistForMoods, stopOverlap } from "./scoring";
+import { distanceMeters, isCoordinates, searchRadius, toLngLat } from "./coordinates";
 
 const place = (id: string, category: Place["category"] = "park"): Place => ({ id, name: id, category, lat: 55.95, lng: -3.19, baseScenicScore: 80 });
 const route = (id: string, stops: Place[], score: number): WanderRoute => ({ id, name: id, description: "", geometry: { type: "LineString", coordinates: [[-3.19, 55.95], [-3.18, 55.96]] }, stops, score, distanceMeters: 500, walkingMinutes: 8, stopMinutes: 4, bufferMinutes: 2, totalMinutes: 14, highlights: [], isLoop: true, source: "live" });
@@ -23,15 +23,26 @@ describe("transparent route scoring", () => {
   it("redistributes absent event weight and remains deterministic", () => {
     const stops = [place("a", "park"), place("b", "historic")];
     // scenic80*.3 + novelty80*.25 + variety100*.15 + surprise75*.2 = 74; / .9
-    expect(scorePlaces(stops, "surprise", [])).toBe(82);
-    expect(scorePlaces(stops, "surprise", [], 100)).toBe(84);
-    expect(scorePlaces(stops, "surprise", [])).toBe(scorePlaces(stops, "surprise", []));
+    expect(scorePlaces(stops, [], [])).toBe(82);
+    expect(scorePlaces(stops, [], [], 100)).toBe(84);
+    expect(scorePlaces(stops, [], [])).toBe(scorePlaces(stops, [], []));
   });
   it("rewards preferences and discoveries without trusting visited scores", () => {
     const stops = [place("a"), place("b")];
-    expect(scorePlaces(stops, "green", [])).toBeGreaterThan(scorePlaces(stops, "historic", []));
-    expect(scorePlaces(stops, "green", [])).toBeGreaterThan(scorePlaces(stops, "green", ["a", "b"]));
-    expect(scorePlaces([], "scenic", [])).toBe(0);
+    expect(scorePlaces(stops, ["green"], [])).toBeGreaterThan(scorePlaces(stops, ["historic"], []));
+    expect(scorePlaces(stops, ["green"], [])).toBeGreaterThan(scorePlaces(stops, ["green"], ["a", "b"]));
+    expect(scorePlaces([], ["scenic"], [])).toBe(0);
+  });
+  it("favours walks that cover every selected tag", () => {
+    const mixed = [place("a", "park"), place("b", "historic")];
+    const parks = [place("c", "park"), place("d", "park")];
+    expect(scorePlaces(mixed, ["green", "historic"], [])).toBeGreaterThan(scorePlaces(parks, ["green", "historic"], []));
+  });
+  it("keeps places for a minority tag in the candidate shortlist", () => {
+    const places = [...Array.from({ length: 24 }, (_, i) => place(`p${i}`, "park")), place("h1", "historic"), place("h2", "historic")];
+    expect(shortlistForMoods(places, ["green", "historic"]).map(p => p.id)).toEqual(expect.arrayContaining(["h1", "h2"]));
+    expect(shortlistForMoods(places, ["green", "historic"])).toHaveLength(20);
+    expect(shortlistForMoods(places, [])).toEqual(places.slice(0, 20));
   });
   it("penalises retracing an edge in reverse", () => {
     expect(repetitionPenalty({ type: "LineString", coordinates: [[0, 0], [0, 1], [0, 0]] })).toBe(10);
@@ -48,6 +59,13 @@ describe("ranking and diversity", () => {
   });
   it("returns fewer results when no distinct alternatives exist", () => {
     expect(rankRoutes([route("a", [place("one"), place("two")], 80), route("b", [place("one"), place("two")], 70)])).toHaveLength(1);
+  });
+});
+
+describe("running pace", () => {
+  it("searches further when running, within the scaled cap", () => {
+    expect(searchRadius(30, true, 2.25)).toBeGreaterThan(searchRadius(30, true) * 2);
+    expect(searchRadius(180, false, 2.25)).toBe(Math.round(3500 * 2.25));
   });
 });
 

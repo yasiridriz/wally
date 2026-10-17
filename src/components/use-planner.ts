@@ -5,8 +5,8 @@ import { generateRoutes } from "@/app/actions/generate-routes";
 import { getEventDetours } from "@/app/actions/get-events";
 import { DEMO_DESTINATION, DEMO_START } from "@/lib/demo-data";
 import { clampDuration } from "@/lib/duration";
-import { DEFAULT_PREFERENCES, persistablePreferences, restorePreferences, type Preferences } from "@/lib/preferences";
-import type { Coordinates, DetourOption, LocationSearchResult, Mood, RouteMode, WanderRoute } from "@/lib/types";
+import { DEFAULT_PREFERENCES, normalizeMoods, persistablePreferences, restorePreferences, type Preferences } from "@/lib/preferences";
+import type { Coordinates, DetourOption, LocationSearchResult, MoodTag, RouteMode, WanderRoute } from "@/lib/types";
 
 export type PlaceChoice = { coordinates: Coordinates; label: string; address?: string };
 export type PickTarget = "start" | "destination";
@@ -70,7 +70,7 @@ export function usePlanner(hasLiveSetup: boolean) {
   const selected = routes.find(route => route.id === selectedId);
   const shownRoute = preview?.route || selected;
   const shownRoutes = preview && selected ? routes.map(route => route.id === selected.id ? preview.route : route) : routes;
-  const tagCount = (preferences.mood !== "surprise" ? 1 : 0) + (preferences.includeEvents ? 1 : 0);
+  const tagCount = preferences.moods.length + (preferences.includeEvents ? 1 : 0);
 
   function clearResults() {
     requestVersion.current++; detourVersion.current++;
@@ -89,12 +89,14 @@ export function usePlanner(hasLiveSetup: boolean) {
 
   const setDuration = (duration: number) => setPreferences({ duration });
   const setShape = (shape: Preferences["shape"]) => setPreferences({ shape });
-  // Moods are single-choice: tapping the selected mood returns to Surprise me.
-  const toggleMood = (mood: Exclude<Mood, "surprise">) => setPreferences({ mood: preferences.mood === mood ? "surprise" : mood });
-  const surpriseMe = () => setPreferences({ mood: "surprise" });
+  // Moods combine freely; clearing every one returns to Surprise me.
+  const toggleMood = (mood: MoodTag) => setPreferences({ moods: preferences.moods.includes(mood) ? preferences.moods.filter(value => value !== mood) : normalizeMoods([...preferences.moods, mood]) });
+  const surpriseMe = () => setPreferences({ moods: [] });
   const toggleEvents = () => setPreferences({ includeEvents: !preferences.includeEvents });
-  const resetTags = () => setPreferences({ mood: "surprise", includeEvents: false });
+  const resetTags = () => setPreferences({ moods: [], includeEvents: false });
   const toggleDemo = () => setPreferences({ demo: !demo });
+  // Running plans travel 2.25x faster, so the same time budget reaches further.
+  const togglePace = () => setPreferences({ pace: preferences.pace === "run" ? "walk" : "run" });
 
   function chooseStart(choice: PlaceChoice | null) {
     startVersion.current++; setLocating(false); clearResults();
@@ -150,7 +152,7 @@ export function usePlanner(hasLiveSetup: boolean) {
     setLoading(true); setGenerated(true); onStart?.();
     try {
       const result = await generateRoutes({
-        duration: preferences.duration, mood: preferences.mood, mode, includeEvents: preferences.includeEvents, demo,
+        duration: preferences.duration, moods: preferences.moods, mode, pace: preferences.pace, includeEvents: preferences.includeEvents, demo,
         start: startPoint, ...(mode === "destination" ? { destination: effectiveDestination } : {}), visitedIds: visited,
       });
       if (version !== requestVersion.current) return;
@@ -207,7 +209,7 @@ export function usePlanner(hasLiveSetup: boolean) {
 
   return {
     hasLiveSetup, preferences, demo, loop, mode, tagCount,
-    setDuration, setShape, toggleMood, surpriseMe, toggleEvents, resetTags, toggleDemo,
+    setDuration, setShape, toggleMood, surpriseMe, toggleEvents, resetTags, toggleDemo, togglePace,
     start, destination, startText, destinationText, setStartText, setDestinationText, chooseStart, chooseDestination, selectSearchResult,
     effectiveStart, effectiveDestination, searchBias: effectiveStart ?? mapCenter, setMapCenter,
     picking, pickOnMap, cancelPicking: () => setPicking(null), dropPin, locateMe, locating,

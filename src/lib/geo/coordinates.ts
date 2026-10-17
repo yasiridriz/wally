@@ -18,8 +18,9 @@ export function distanceMeters(a: Coordinates, b: Coordinates): number {
   return 6_371_000 * 2 * Math.atan2(Math.sqrt(h), Math.sqrt(Math.max(0, 1 - h)));
 }
 
-export function searchRadius(duration: number, isLoop: boolean): number {
-  return Math.round(Math.min(3500, Math.max(350, (duration - 6) * 65 / (isLoop ? 2.4 : 1.5))));
+/** `speed` scales the ground covered per minute, e.g. 2.25 when running. */
+export function searchRadius(duration: number, isLoop: boolean, speed = 1): number {
+  return Math.round(Math.min(3500 * speed, Math.max(350, (duration - 6) * 65 * speed / (isLoop ? 2.4 : 1.5))));
 }
 
 export function pathDistance(points: Coordinates[]): number {

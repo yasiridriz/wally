@@ -26,7 +26,7 @@ private func orderLoop(_ stops: [Place], _ start: Coordinates) -> [Place] {
 }
 
 public func loopCandidatePool(_ places: [Place], _ request: GenerateRequest) -> [ScenicCandidate] {
-  let available = Array(places.filter { distanceMeters(request.start, $0.coordinates) > 50 }.prefix(20))
+  let available = shortlistForMoods(places.filter { distanceMeters(request.start, $0.coordinates) > 50 }, request.moods)
   var pool: [ScenicCandidate] = []
   var seen = Set<String>()
   func add(_ stops: [Place]) {
@@ -38,7 +38,8 @@ public func loopCandidatePool(_ places: [Place], _ request: GenerateRequest) -> 
     let geographicMeters = pathDistance([request.start] + ordered.map(\.coordinates) + [request.start])
     // Initial walking model: network factor 1.25 / walking speed 1.25 m/s.
     // Leave 25% headroom because the actual provider decides feasibility.
-    let estimate = estimateExperienceWithStops(durationSeconds: geographicMeters, stops: ordered)
+    // Running covers the same ground `pace.speed` times faster.
+    let estimate = estimateExperienceWithStops(durationSeconds: geographicMeters / request.pace.speed, stops: ordered)
     if geographicMeters < 180 || Double(estimate.totalMinutes) > Double(request.minutes) * 1.25 { return }
     let outward = stops.map { distanceMeters(request.start, $0.coordinates) }.max() ?? 0
     let connecting = pathDistance(ordered.map(\.coordinates))
@@ -77,9 +78,9 @@ private func orderStops(_ stops: [Place], _ request: GenerateRequest) -> [Place]
 }
 
 public func openCandidatePool(_ places: [Place], _ request: GenerateRequest) -> [ScenicCandidate] {
-  let available = Array(places.filter { place in
+  let available = shortlistForMoods(places.filter { place in
     distanceMeters(request.start, place.coordinates) > 50 && (request.mode != .destination || request.destination.map { distanceMeters($0, place.coordinates) > 50 } ?? true)
-  }.prefix(20))
+  }, request.moods)
   var pool: [ScenicCandidate] = []
   var seen = Set<String>()
   func candidate(_ stops: [Place]) -> ScenicCandidate? {
@@ -88,7 +89,7 @@ public func openCandidatePool(_ places: [Place], _ request: GenerateRequest) -> 
     var points = [request.start] + ordered.map(\.coordinates)
     if request.mode == .destination, let destination = request.destination { points.append(destination) }
     let geographicMeters = pathDistance(points)
-    if geographicMeters < 180 || Double(estimateExperienceWithStops(durationSeconds: geographicMeters, stops: ordered).totalMinutes) > Double(request.minutes) * 1.25 { return nil }
+    if geographicMeters < 180 || Double(estimateExperienceWithStops(durationSeconds: geographicMeters / request.pace.speed, stops: ordered).totalMinutes) > Double(request.minutes) * 1.25 { return nil }
     let outward = stops.map { distanceMeters(request.start, $0.coordinates) }.max() ?? 0
     return ScenicCandidate(stops: ordered, geographicMeters: geographicMeters, key: candidateKey(stops), spread: min(1, pathDistance(ordered.map(\.coordinates)) / max(1, outward)))
   }
@@ -101,7 +102,7 @@ public func openCandidatePool(_ places: [Place], _ request: GenerateRequest) -> 
   // most of the budget. Longer budgets still shortlist genuine side detours.
   if request.mode == .destination { available.forEach { add(candidate([$0])) } }
   func difference(_ value: ScenicCandidate) -> Double {
-    abs(Double(estimateExperienceWithStops(durationSeconds: value.geographicMeters, stops: value.stops).totalMinutes) - Double(request.minutes) * 0.97)
+    abs(Double(estimateExperienceWithStops(durationSeconds: value.geographicMeters / request.pace.speed, stops: value.stops).totalMinutes) - Double(request.minutes) * 0.97)
   }
   for a in available.indices {
     for b in available.indices where b > a {
@@ -129,11 +130,14 @@ public func chooseCandidate(_ pool: [ScenicCandidate], _ request: GenerateReques
   let used = Set(selected.map(\.key))
   let duration = Double(request.minutes)
   func merit(_ candidate: ScenicCandidate) -> Double {
-    let estimated = Double(estimateExperienceWithStops(durationSeconds: candidate.geographicMeters * secondsPerMeter, stops: candidate.stops).totalMinutes)
+    // secondsPerMeter is calibrated on walking times; running divides the travel part.
+    let estimated = Double(estimateExperienceWithStops(durationSeconds: candidate.geographicMeters * secondsPerMeter / request.pace.speed, stops: candidate.stops).totalMinutes)
     let closeness = abs(estimated - duration * targetFraction) / duration
     let overlap = selected.map { stopOverlap(candidate.stops, $0.stops) }.max() ?? 0
     let distanceFit = 250 * closeness + (estimated > duration ? 20 : 0)
-    return -distanceFit + scorePlaces(candidate.stops, mood: request.mood, visitedIds: request.visitedIds) * 0.12 + candidate.spread * 8 - overlap * 12
+    // Several tags: prefer combinations that visit a stop for each of them.
+    let coverage = request.moods.count > 1 ? moodCoverage(candidate.stops, request.moods) * 0.1 : 0
+    return -distanceFit + scorePlaces(candidate.stops, moods: request.moods, visitedIds: request.visitedIds) * 0.12 + candidate.spread * 8 + coverage - overlap * 12
   }
   return pool.filter { !used.contains($0.key) }
     .map { ($0, merit($0)) }

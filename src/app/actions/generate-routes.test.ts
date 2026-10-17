@@ -9,7 +9,7 @@ import type { GenerateRequest } from '@/lib/types';
 
 const request: GenerateRequest = {
   start: { lat: 55.9442, lng: -3.19055 }, destination: { lat: 55.94695, lng: -3.1891 },
-  duration: 30, mode: 'destination', mood: 'green', includeEvents: false, demo: false, visitedIds: [],
+  duration: 30, mode: 'destination', moods: ['green'], includeEvents: false, demo: false, visitedIds: [],
 };
 afterEach(() => { vi.unstubAllEnvs(); vi.resetAllMocks(); });
 
@@ -27,7 +27,18 @@ describe('destination action input', () => {
     vi.stubEnv('GOOGLE_MAPS_API_KEY', 'test-key');
     vi.mocked(generateLiveRoutes).mockResolvedValue([]);
     await generateRoutes({ ...request, destination: { ...request.destination, clientScore: 100, distanceMeters: 1 } });
-    expect(generateLiveRoutes).toHaveBeenCalledWith(request);
+    expect(generateLiveRoutes).toHaveBeenCalledWith({ ...request, pace: 'walk' });
+  });
+  it('accepts a running pace, rejects unknown paces, and lets runners reach further destinations', async () => {
+    vi.stubEnv('GOOGLE_MAPS_API_KEY', 'test-key');
+    vi.mocked(generateLiveRoutes).mockResolvedValue([]);
+    await generateRoutes({ ...request, pace: 'run' });
+    expect(generateLiveRoutes).toHaveBeenCalledWith({ ...request, pace: 'run' });
+    expect(await generateRoutes({ ...request, pace: 'sprint' })).toMatchObject({ ok: false, code: 'INVALID_INPUT' });
+    // About 4 km away: too far to walk in 30 minutes, within reach running.
+    const farther = { ...request, destination: { lat: request.start.lat + 0.036, lng: request.start.lng } };
+    expect(await generateRoutes(farther)).toMatchObject({ ok: false, code: 'DESTINATION_TOO_FAR' });
+    expect(await generateRoutes({ ...farther, pace: 'run' })).not.toMatchObject({ code: 'DESTINATION_TOO_FAR' });
   });
   it('discards an irrelevant destination in loop mode', async () => {
     vi.stubEnv('GOOGLE_MAPS_API_KEY', 'test-key');

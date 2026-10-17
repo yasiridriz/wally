@@ -4,7 +4,7 @@ import { useEffect, useLayoutEffect, useRef, useState } from "react";
 import { ChevronDown, ChevronUp, Info } from "lucide-react";
 import Link from "next/link";
 import { routeShapeLabel } from "@/lib/route-labels";
-import { Brand, BrandMark, DemoToggle } from "./brand";
+import { Brand, BrandMark, DemoToggle, PaceToggle } from "./brand";
 import GenerateButton from "./generate-button";
 import LocationFields from "./location-fields";
 import { PreferenceMenu } from "./preference-chips";
@@ -52,13 +52,14 @@ export default function MobilePlanner({ planner }: { planner: Planner }) {
     <div ref={top} className="phone-top">
       {folded ? <button type="button" className="summary-bar" onClick={reopen} aria-label="Edit your walk">
         <BrandMark size={26} />
-        <span className="summary-text"><span className="summary-duration">{planner.preferences.duration} minutes</span><span className="summary-detail">{routeShapeLabel({ loop: planner.loop, destinationLabel, mood: planner.preferences.mood, includeEvents: planner.preferences.includeEvents })}</span></span>
+        <span className="summary-text"><span className="summary-duration">{planner.preferences.duration} min {planner.preferences.pace === "run" ? "run" : "walk"}</span><span className="summary-detail">{routeShapeLabel({ loop: planner.loop, destinationLabel, moods: planner.preferences.moods, includeEvents: planner.preferences.includeEvents })}</span></span>
         <span className="summary-edit">Edit</span>
       </button> : <div className="phone-card">
         <div className="phone-brand">
           <Brand compact />
           <span className="phone-brand-actions">
             <DemoToggle on={planner.demo} onToggle={planner.toggleDemo} disabled={loading} />
+            <PaceToggle pace={planner.preferences.pace} onToggle={planner.togglePace} disabled={loading} />
             <Link className="icon-link" href="/terms" aria-label="About Wally and terms of use"><Info size={16} /></Link>
             {routes.length ? <button type="button" className="icon-link" onClick={() => { setFolded(true); setSheetFolded(false); }} aria-label="Hide the planner"><ChevronUp size={18} /></button> : null}
           </span>

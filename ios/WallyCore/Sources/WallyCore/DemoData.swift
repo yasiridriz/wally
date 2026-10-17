@@ -42,7 +42,7 @@ public func demoRouteSamples(_ request: GenerateRequest) -> [WanderRoute] {
     var path = fixture.path.map { Coordinates(lat: $0.1, lng: $0.0) }
     if request.mode == .explore, let last = stops.last, let end = path.firstIndex(where: { $0.lng == last.lng && $0.lat == last.lat }) { path = Array(path[...end]) }
     let distance = Int(pathDistance(path).rounded())
-    let walking = Int((Double(distance) / 70).rounded(.up))
+    let walking = Int((Double(distance) / (70 * request.pace.speed)).rounded(.up))
     let stopMinutes = stops.count * 2
     let buffer = max(2, Int((Double(walking) * 0.1).rounded(.up)))
     let total = walking + stopMinutes + buffer
@@ -50,7 +50,7 @@ public func demoRouteSamples(_ request: GenerateRequest) -> [WanderRoute] {
     let highlights = [stops[0].category == .park ? "A little green space" : "Local discoveries", request.mode == .loop ? "Back where you started" : request.mode == .destination ? "Finish at the museum" : "A fresh finish", "Illustrative sample route"]
     return WanderRoute(id: "demo-\(request.mode.rawValue)-\(index)", name: fixture.name, description: fixture.description, geometry: path, stops: stops,
       distanceMeters: distance, walkingMinutes: walking, stopMinutes: stopMinutes, bufferMinutes: buffer, totalMinutes: total,
-      score: scorePlaces(stops, mood: request.mood, visitedIds: request.visitedIds), highlights: highlights, isLoop: request.mode == .loop,
+      score: scorePlaces(stops, moods: request.moods, visitedIds: request.visitedIds), highlights: highlights, isLoop: request.mode == .loop,
       source: .demo, destination: request.mode == .destination ? demoDestination : nil)
   }
 }

@@ -1,6 +1,7 @@
 import "server-only";
 import type { Coordinates, GenerateRequest, Place, PlacePhotoRef } from "../types";
 import { distanceMeters, isCoordinates, searchRadius } from "./coordinates";
+import { paceSpeed } from "../pace";
 import { isDuration } from "../duration";
 
 const INCLUDED_TYPES = ["park", "botanical_garden", "tourist_attraction", "historical_landmark", "monument", "museum", "art_gallery", "observation_deck"];
@@ -152,12 +153,13 @@ function mergePlaceGroups(groups: Place[][], accepts: (place: Place) => boolean)
 
 export async function discoverLoopPlaces(request: GenerateRequest): Promise<Place[]> {
   if (!isCoordinates(request.start) || !isDuration(request.duration)) throw new Error("Invalid loop discovery area or duration.");
-  const radius = searchRadius(request.duration, true);
+  const speed = paceSpeed(request.pace);
+  const radius = searchRadius(request.duration, true, speed);
   const ringDistance = radius * 0.75;
-  const outerRadius = Math.round(Math.max(700, Math.min(1100, radius * 0.4)));
+  const outerRadius = Math.round(Math.max(700, Math.min(1100 * speed, radius * 0.4)));
   const queries = [
     { center: request.start, radius: Math.min(750, radius), types: INCLUDED_TYPES, rank: "DISTANCE" as const },
-    ...(request.duration >= 45 ? [0, 120, 240].map(bearing => ({ center: offset(request.start, ringDistance, bearing), radius: outerRadius, types: INCLUDED_TYPES, rank: "POPULARITY" as const })) : []),
+    ...(request.duration * speed >= 45 ? [0, 120, 240].map(bearing => ({ center: offset(request.start, ringDistance, bearing), radius: outerRadius, types: INCLUDED_TYPES, rank: "POPULARITY" as const })) : []),
     { center: request.start, radius, types: VIEWPOINT_TYPES, rank: "POPULARITY" as const },
     { center: request.start, radius, types: ACTIVITY_TYPES, rank: "POPULARITY" as const },
   ];
@@ -200,11 +202,12 @@ async function queryAreas(queries: DiscoveryQuery[]): Promise<Place[][]> {
 
 export async function discoverExplorePlaces(request: GenerateRequest): Promise<Place[]> {
   if (!isCoordinates(request.start) || !isDuration(request.duration)) throw new Error("Invalid exploration area or duration.");
-  const radius = searchRadius(request.duration, false);
-  const outerRadius = Math.round(Math.max(700, Math.min(1400, radius * 0.4)));
+  const speed = paceSpeed(request.pace);
+  const radius = searchRadius(request.duration, false, speed);
+  const outerRadius = Math.round(Math.max(700, Math.min(1400 * speed, radius * 0.4)));
   const queries: DiscoveryQuery[] = [
     { center: request.start, radius: Math.max(100, Math.min(1000, radius * 0.4)), types: INCLUDED_TYPES, rank: "POPULARITY" },
-    ...(request.duration >= 45 ? [0, 120, 240].map(bearing => ({ center: offset(request.start, radius * 0.78, bearing), radius: outerRadius, types: INCLUDED_TYPES, rank: "POPULARITY" as const })) : []),
+    ...(request.duration * speed >= 45 ? [0, 120, 240].map(bearing => ({ center: offset(request.start, radius * 0.78, bearing), radius: outerRadius, types: INCLUDED_TYPES, rank: "POPULARITY" as const })) : []),
     { center: request.start, radius, types: VIEWPOINT_TYPES, rank: "POPULARITY" },
     { center: request.start, radius, types: ACTIVITY_TYPES, rank: "POPULARITY" },
   ];
@@ -225,17 +228,18 @@ export async function discoverTargetedPlaces(request: GenerateRequest): Promise<
   const directDistance = distanceMeters(request.start, destination);
   // This generous geographic envelope is only a discovery filter. Actual
   // walking, stop visits and the safety buffer determine route eligibility.
-  const travelEnvelope = Math.max(350, (request.duration - 5) * 80);
+  const speed = paceSpeed(request.pace);
+  const travelEnvelope = Math.max(350, (request.duration - 5) * 80 * speed);
   if (directDistance > travelEnvelope) return [];
   const bearing = initialBearing(request.start, destination);
   const midpoint = offset(request.start, directDistance / 2, bearing);
   const spareMeters = Math.max(0, travelEnvelope - directDistance);
-  const broadRadius = Math.round(Math.max(350, Math.min(3500, directDistance / 3 + spareMeters * 0.22)));
-  const lateralDistance = Math.min(2800, spareMeters * 0.3);
+  const broadRadius = Math.round(Math.max(350, Math.min(3500 * speed, directDistance / 3 + spareMeters * 0.22)));
+  const lateralDistance = Math.min(2800 * speed, spareMeters * 0.3);
   const centers = lateralDistance >= 300
     ? [request.start, destination, offset(midpoint, lateralDistance, bearing + 90), offset(midpoint, lateralDistance, bearing - 90)]
     : [request.start, midpoint, destination];
-  const focusRadius = Math.round(Math.max(350, Math.min(3500, travelEnvelope / 2)));
+  const focusRadius = Math.round(Math.max(350, Math.min(3500 * speed, travelEnvelope / 2)));
   const queries: DiscoveryQuery[] = [
     ...centers.map(center => ({ center, radius: broadRadius, types: INCLUDED_TYPES, rank: "POPULARITY" as const })),
     { center: midpoint, radius: focusRadius, types: VIEWPOINT_TYPES, rank: "POPULARITY" },

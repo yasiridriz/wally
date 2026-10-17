@@ -133,20 +133,22 @@ func mergePlaceGroups(_ groups: [[Place]], accepts: (Place) -> Bool) -> [Place] 
 
 public func discoverLoopPlaces(_ client: GoogleClient, _ request: GenerateRequest) async throws -> [Place] {
   guard isCoordinates(request.start) else { throw ProviderError("Invalid loop discovery area or duration.") }
-  let radius = searchRadius(request.minutes, isLoop: true)
-  let outerRadius = max(700, min(1100, radius * 0.4)).rounded()
+  let speed = request.pace.speed
+  let radius = searchRadius(request.minutes, isLoop: true, speed: speed)
+  let outerRadius = max(700, min(1100 * speed, radius * 0.4)).rounded()
   var queries = [DiscoveryQuery(center: request.start, radius: min(750, radius), types: includedTypes, rank: .distance)]
-  if request.minutes >= 45 { queries += [0.0, 120, 240].map { DiscoveryQuery(center: offset(request.start, meters: radius * 0.75, degrees: $0), radius: outerRadius, types: includedTypes, rank: .popularity) } }
+  if Double(request.minutes) * speed >= 45 { queries += [0.0, 120, 240].map { DiscoveryQuery(center: offset(request.start, meters: radius * 0.75, degrees: $0), radius: outerRadius, types: includedTypes, rank: .popularity) } }
   queries += [DiscoveryQuery(center: request.start, radius: radius, types: viewpointTypes, rank: .popularity), DiscoveryQuery(center: request.start, radius: radius, types: activityTypes, rank: .popularity)]
   return mergePlaceGroups(try await queryAreas(client, queries)) { distanceMeters(request.start, $0.coordinates) <= radius }
 }
 
 public func discoverExplorePlaces(_ client: GoogleClient, _ request: GenerateRequest) async throws -> [Place] {
   guard isCoordinates(request.start) else { throw ProviderError("Invalid exploration area or duration.") }
-  let radius = searchRadius(request.minutes, isLoop: false)
-  let outerRadius = max(700, min(1400, radius * 0.4)).rounded()
+  let speed = request.pace.speed
+  let radius = searchRadius(request.minutes, isLoop: false, speed: speed)
+  let outerRadius = max(700, min(1400 * speed, radius * 0.4)).rounded()
   var queries = [DiscoveryQuery(center: request.start, radius: max(100, min(1000, radius * 0.4)), types: includedTypes, rank: .popularity)]
-  if request.minutes >= 45 { queries += [0.0, 120, 240].map { DiscoveryQuery(center: offset(request.start, meters: radius * 0.78, degrees: $0), radius: outerRadius, types: includedTypes, rank: .popularity) } }
+  if Double(request.minutes) * speed >= 45 { queries += [0.0, 120, 240].map { DiscoveryQuery(center: offset(request.start, meters: radius * 0.78, degrees: $0), radius: outerRadius, types: includedTypes, rank: .popularity) } }
   queries += [DiscoveryQuery(center: request.start, radius: radius, types: viewpointTypes, rank: .popularity), DiscoveryQuery(center: request.start, radius: radius, types: activityTypes, rank: .popularity)]
   return mergePlaceGroups(try await queryAreas(client, queries)) { distanceMeters(request.start, $0.coordinates) <= radius }
 }
@@ -158,17 +160,18 @@ public func discoverTargetedPlaces(_ client: GoogleClient, _ request: GenerateRe
   let directDistance = distanceMeters(request.start, destination)
   // This generous geographic envelope is only a discovery filter. Actual
   // walking, stop visits and the safety buffer determine route eligibility.
-  let travelEnvelope = max(350, Double(request.minutes - 5) * 80)
+  let speed = request.pace.speed
+  let travelEnvelope = max(350, Double(request.minutes - 5) * 80 * speed)
   if directDistance > travelEnvelope { return [] }
   let bearing = initialBearing(request.start, destination)
   let midpoint = offset(request.start, meters: directDistance / 2, degrees: bearing)
   let spareMeters = max(0, travelEnvelope - directDistance)
-  let broadRadius = max(350, min(3500, directDistance / 3 + spareMeters * 0.22)).rounded()
-  let lateralDistance = min(2800, spareMeters * 0.3)
+  let broadRadius = max(350, min(3500 * speed, directDistance / 3 + spareMeters * 0.22)).rounded()
+  let lateralDistance = min(2800 * speed, spareMeters * 0.3)
   let centers = lateralDistance >= 300
     ? [request.start, destination, offset(midpoint, meters: lateralDistance, degrees: bearing + 90), offset(midpoint, meters: lateralDistance, degrees: bearing - 90)]
     : [request.start, midpoint, destination]
-  let focusRadius = max(350, min(3500, travelEnvelope / 2)).rounded()
+  let focusRadius = max(350, min(3500 * speed, travelEnvelope / 2)).rounded()
   let queries = centers.map { DiscoveryQuery(center: $0, radius: broadRadius, types: includedTypes, rank: .popularity) } + [
     DiscoveryQuery(center: midpoint, radius: focusRadius, types: viewpointTypes, rank: .popularity),
     DiscoveryQuery(center: midpoint, radius: focusRadius, types: activityTypes, rank: .popularity),
