@@ -2,7 +2,7 @@
 export const MIN_DURATION = 5;
 /** Eight hours: long walks and runs are planned like any other. */
 export const MAX_DURATION = 480;
-export const DURATION_PRESETS = [15, 30, 45, 60, 90] as const;
+export const DURATION_PRESETS = [15, 30, 45, 60, 120] as const;
 export const DEFAULT_DURATION = 30;
 
 export function isDuration(value: unknown): value is number {

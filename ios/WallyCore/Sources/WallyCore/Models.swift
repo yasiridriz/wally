@@ -39,9 +39,9 @@ public struct WalkDuration: RawRepresentable, Hashable, Codable, Sendable, Compa
   }
   public init(clamping minutes: Int) { rawValue = Swift.min(WalkDuration.maximum, Swift.max(WalkDuration.minimum, minutes)) }
   public static let m15 = WalkDuration(clamping: 15), m30 = WalkDuration(clamping: 30), m45 = WalkDuration(clamping: 45)
-  public static let m60 = WalkDuration(clamping: 60), m90 = WalkDuration(clamping: 90)
+  public static let m60 = WalkDuration(clamping: 60), m90 = WalkDuration(clamping: 90), m120 = WalkDuration(clamping: 120)
   /// The quick-choice presets.
-  public static let allCases: [WalkDuration] = [.m15, .m30, .m45, .m60, .m90]
+  public static let allCases: [WalkDuration] = [.m15, .m30, .m45, .m60, .m120]
   public static func < (a: WalkDuration, b: WalkDuration) -> Bool { a.rawValue < b.rawValue }
 }
 public enum Mood: String, CaseIterable, Codable, Sendable {

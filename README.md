@@ -45,7 +45,7 @@ OpenRouteService, Overpass, OpenStreetMap tiles, and Leaflet are no longer used.
 
 The default walk is 30 minutes, finishing anywhere, with Surprise me. With both keys configured, press **Find me a little adventure →** once: if you did not choose a start, Wally asks the browser for your current location first, then finds walks. Location access requires HTTPS or localhost. If access is denied, unavailable, or times out, Wally explains and you can type a start or pick one on the map. A location result that arrives late never overwrites a start you chose.
 
-- **Time:** the main control. Choose any whole minute from 5 to 480 (8 hours) with the slider, the −/+ buttons (5 minutes), or the 15/30/45/60/90 presets. All three stay in sync.
+- **Time:** the main control. Choose any whole minute from 5 to 480 (8 hours) with the slider, the −/+ buttons (5 minutes), or the 15/30/45/60/120 presets. All three stay in sync.
 - **Start and finish:** type 3 or more characters and choose a suggestion (↑ ↓ and Enter work), use your location, or press the crosshair and tap the map to drop a pin. Outside pick mode, map taps do nothing. If you type text but choose no suggestion, Wally asks you to choose one instead of guessing.
 - **Route shape:** **Loop back** returns to the start (`loop`). **Finish elsewhere** finishes at your destination (`destination`, Targeted) when you chose one, and otherwise at the last interesting stop (`explore`). Event detours preserve the endpoint. A destination must be at least 50 metres from the start and reachable within the chosen time.
 - **Tags:** combine any moods (Scenic, Green & peaceful, Historic, Hidden gems); none selected is Surprise me. Sample event detours and **Favourites** toggle on their own.
