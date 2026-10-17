@@ -4,7 +4,7 @@ vi.mock('@/lib/geo/generate', () => ({ generateLiveRoutes: vi.fn() }));
 vi.mock('@/lib/events', () => ({ registerGeneratedRoutes: vi.fn() }));
 import { generateRoutes } from './generate-routes';
 import { generateLiveRoutes } from '@/lib/geo/generate';
-import { DEMO_DESTINATION } from '@/lib/demo-data';
+import { DEMO_DESTINATION, DEMO_START } from '@/lib/demo-data';
 import type { GenerateRequest } from '@/lib/types';
 
 const request: GenerateRequest = {
@@ -41,6 +41,7 @@ describe('destination action input', () => {
     if (result.ok) {
       expect(result.data.message).toContain('National Museum of Scotland');
       for (const route of result.data.routes) expect(route.destination).toEqual(DEMO_DESTINATION);
+      for (const route of result.data.routes) expect(route.start).toEqual(DEMO_START);
     }
   });
 });

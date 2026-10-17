@@ -46,6 +46,9 @@ describe("event feasibility", () => {
     expect(options).toHaveLength(1);
     expect(options[0].route.totalMinutes).toBe(10 + route.stopMinutes + 2 + example.visitMinutes);
     expect(options[0].route.event).toEqual(example);
+    // The Google Maps link uses this index to keep the event at its routed position.
+    const routed = vi.mocked(routeWalking).mock.calls[0][0];
+    expect(routed[options[0].route.eventStopIndex! + 1]).toEqual(example.location);
     expect(options[0].route.geometry.coordinates.at(-1)).toEqual([DEMO_START.lng, DEMO_START.lat]);
     expect(routeWalking).toHaveBeenCalledTimes(1);
   });

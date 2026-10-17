@@ -5,7 +5,6 @@ import { generateLiveRoutes } from "@/lib/geo/generate";
 import { generateDemoRoutes, DEMO_START, DEMO_DESTINATION } from "@/lib/demo-data";
 import { registerGeneratedRoutes } from "@/lib/events";
 import { distanceMeters, isCoordinates } from "@/lib/geo/coordinates";
-import { rankTimeMatchedRoutes } from "@/lib/geo/scoring";
 import type { ActionResult, GenerateRequest, GenerateResponse } from "@/lib/types";
 
 function validate(raw: unknown): GenerateRequest | null {
@@ -32,9 +31,8 @@ export async function generateRoutes(raw: unknown): Promise<ActionResult<Generat
   if (!request.demo && !process.env.GOOGLE_MAPS_API_KEY?.trim()) return { ok: false, error: "Live walks need a Google Maps server API key with Places API (New) and Routes API enabled. Select Demo Mode to try sample Edinburgh walks.", code: "MISSING_KEY" };
   try {
     const canonicalRequest = request.demo ? { ...request, start: DEMO_START, destination: request.mode === "destination" ? DEMO_DESTINATION : undefined } : request;
-    const samples = request.demo ? generateDemoRoutes(canonicalRequest) : undefined;
-    const result = samples ? rankTimeMatchedRoutes(samples, request.duration) : await generateLiveRoutes(canonicalRequest);
-    const routes = result.map((route) => ({ ...route, id: randomUUID() }));
+    const result = request.demo ? generateDemoRoutes(canonicalRequest) : await generateLiveRoutes(canonicalRequest);
+    const routes = result.map((route) => ({ ...route, id: randomUUID(), start: canonicalRequest.start }));
     registerGeneratedRoutes(canonicalRequest, routes);
     let message = request.demo ? `Sample Edinburgh routes: paths are hand-drawn illustrations and times are unverified estimates. Demo walks use a fixed start at the Meadows${request.mode === "destination" ? " and finish at the National Museum of Scotland" : ""}.` : undefined;
     if (request.demo && !routes.length) {

@@ -204,3 +204,114 @@ describe("loops fill the requested time with real walking and visits", () => {
     expect(routes.every((route) => route.totalMinutes >= 81 && route.totalMinutes <= 90)).toBe(true);
   });
 });
+
+import { openCandidatePool } from "./open-candidates";
+
+const openModes = ["explore", "destination"] as const;
+function openRequest(mode: typeof openModes[number], duration: GenerateRequest["duration"] = 90): GenerateRequest {
+  return { ...request, mode, duration, ...(mode === "destination" ? { destination: { lat: request.start.lat, lng: request.start.lng + .008 } } : {}) };
+}
+function mockOpenDiscovery(mode: typeof openModes[number], points: Place[]) {
+  vi.mocked(mode === "explore" ? discoverExplorePlaces : discoverTargetedPlaces).mockResolvedValue(points);
+}
+
+for (const mode of openModes) {
+  describe(`${mode} matches the selected duration`, () => {
+    it("returns 81–90 minute experiences for 90 minutes and excludes a 20 minute candidate", async () => {
+      const input = openRequest(mode);
+      mockOpenDiscovery(mode, spreadPlaces);
+      let index = 0;
+      vi.mocked(routeWalking).mockImplementation(async (points) => walkingLoop(points, index++ === 0 ? 12 * 60 : 74 * 60));
+      const routes = await generateLiveRoutes(input);
+      expect(routes.length).toBeGreaterThan(0);
+      expect(routes.every((route) => route.totalMinutes >= 81 && route.totalMinutes <= 90 && !route.isLoop)).toBe(true);
+      expect(vi.mocked(routeWalking).mock.calls).toHaveLength(6);
+      for (const [points] of vi.mocked(routeWalking).mock.calls) {
+        expect(points[0]).toEqual(input.start);
+        if (mode === "destination") expect(points.at(-1)).toEqual(input.destination);
+        else expect(points.at(-1)).not.toEqual(input.start);
+      }
+      for (const route of routes) {
+        if (mode === "destination") {
+          expect(route.destination).toEqual(input.destination);
+          expect(route.geometry.coordinates.at(-1)).toEqual([input.destination!.lng, input.destination!.lat]);
+        } else {
+          expect(route.geometry.coordinates.at(-1)).toEqual([route.stops.at(-1)!.lng, route.stops.at(-1)!.lat]);
+          expect(route.destination).toBeUndefined();
+        }
+      }
+    });
+    it("calibrates the last two requests using measured real-network time", async () => {
+      const input = openRequest(mode);
+      mockOpenDiscovery(mode, spreadPlaces);
+      const totals: number[] = [];
+      vi.mocked(routeWalking).mockImplementation(async (points) => {
+        const seconds = pathDistance(points) * .8;
+        const walking = Math.ceil(seconds / 60);
+        const stopCount = points.length - (mode === "destination" ? 2 : 1);
+        totals.push(walking + Math.max(2, Math.ceil(walking * .1)) + stopCount * 2);
+        return walkingLoop(points, seconds);
+      });
+      const routes = await generateLiveRoutes(input);
+      expect(totals).toHaveLength(6);
+      expect(totals.slice(0, 4).some((total) => total < 81)).toBe(true);
+      expect(totals.slice(4).some((total) => total >= 81 && total <= 90)).toBe(true);
+      expect(routes.every((route) => route.totalMinutes >= 81 && route.totalMinutes <= 90)).toBe(true);
+      const keys = vi.mocked(routeWalking).mock.calls.map(([points]) => points.slice(1, mode === "destination" ? -1 : undefined).map((point) => `${point.lat},${point.lng}`).sort().join("|"));
+      expect(new Set(keys).size).toBe(6);
+    });
+    it("accepts the exact actual budget and rejects one minute over including final leg and visits", async () => {
+      const input = openRequest(mode, 15);
+      mockOpenDiscovery(mode, places);
+      vi.mocked(routeWalking).mockImplementation(async (points) => {
+        const stopCount = points.length - (mode === "destination" ? 2 : 1);
+        return walkingLoop(points, (15 - 2 - stopCount * 2) * 60);
+      });
+      const routes = await generateLiveRoutes(input);
+      expect(routes.length).toBeGreaterThan(0);
+      expect(routes.every((route) => route.totalMinutes === 15)).toBe(true);
+      vi.mocked(routeWalking).mockImplementation(async (points) => {
+        const stopCount = points.length - (mode === "destination" ? 2 : 1);
+        return walkingLoop(points, (16 - 2 - stopCount * 2) * 60);
+      });
+      await expect(generateLiveRoutes(input)).rejects.toThrow(/close to 15 minutes.*ranged from 16 to 16 minutes/);
+    });
+    it("keeps the candidate and HTTP attempt budgets bounded with two concurrent requests", async () => {
+      const input = openRequest(mode);
+      mockOpenDiscovery(mode, spreadPlaces);
+      expect(openCandidatePool(spreadPlaces, input).length).toBeLessThanOrEqual(400);
+      let active = 0;
+      let peak = 0;
+      let attempts = 0;
+      vi.mocked(routeWalking).mockImplementation(async (points, budget) => {
+        active++; peak = Math.max(peak, active);
+        const count = attempts < 4 ? 2 : 1;
+        budget!.remaining -= count;
+        attempts += count;
+        expect(budget!.remaining).toBeGreaterThanOrEqual(0);
+        await Promise.resolve(); active--;
+        return walkingLoop(points, 74 * 60);
+      });
+      const routes = await generateLiveRoutes(input);
+      expect(routes.length).toBeGreaterThan(0);
+      expect(attempts).toBeLessThanOrEqual(8);
+      expect(vi.mocked(routeWalking).mock.calls.length).toBeLessThanOrEqual(6);
+      expect(peak).toBeLessThanOrEqual(2);
+    });
+    it("explains verified durations instead of padding short walks", async () => {
+      const input = openRequest(mode);
+      mockOpenDiscovery(mode, spreadPlaces);
+      vi.mocked(routeWalking).mockImplementation(async (points) => walkingLoop(points, 12 * 60));
+      await expect(generateLiveRoutes(input)).rejects.toThrow(/No (Explore|Targeted) walk close to 90 minutes.*Verified (Explore|Targeted) walks ranged/);
+    });
+  });
+}
+
+it("allows scenic side detours for a long Targeted budget with nearby endpoints", () => {
+  const input = openRequest("destination");
+  const pool = openCandidatePool(spreadPlaces, input);
+  const selected = shortlistCandidates(spreadPlaces, input);
+  expect(pool.length).toBeGreaterThan(0);
+  expect(selected.some((stops) => stops.some((place) => Math.abs(place.lat - input.start.lat) > .01))).toBe(true);
+  expect(selected.every((stops) => stops.length >= 1 && stops.length <= 3)).toBe(true);
+});

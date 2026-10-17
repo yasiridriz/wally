@@ -7,12 +7,16 @@ export type Duration = 15 | 30 | 45 | 60 | 90;
 export type Mood = 'surprise' | 'scenic' | 'green' | 'historic' | 'hidden';
 export type RouteMode = 'destination' | 'loop' | 'explore';
 export type PlaceCategory = 'park' | 'viewpoint' | 'historic' | 'art' | 'attraction' | 'path';
+export type Attribution = { displayName: string; uri?: string };
+/** Google photo resource name; a short-lived image URL is fetched on demand. */
+export type PlacePhotoRef = { name: string; authorAttributions: Attribution[] };
 export type Place = Coordinates & {
   id: string; name: string; category: PlaceCategory; description?: string;
   baseScenicScore: number; tags?: Record<string, string>;
   attributions?: { displayName: string; uri?: string }[];
   visitMinutes?: number;
   suggestedActivity?: string;
+  photo?: PlacePhotoRef;
 };
 export type Event = {
   id: string; name: string; location: Coordinates; startTime: string; endTime: string;
@@ -24,6 +28,10 @@ export type WanderRoute = {
   bufferMinutes: number; totalMinutes: number; score: number; highlights: string[];
   isLoop: boolean; source: 'live' | 'demo'; event?: Event; destination?: Coordinates;
   routingWarnings?: string[];
+  /** Validated start of the walk. */
+  start?: Coordinates;
+  /** Count of stops visited before the event on a detour route. */
+  eventStopIndex?: number;
 };
 export type GenerateRequest = {
   start: Coordinates; duration: Duration; mood: Mood; mode: RouteMode;
@@ -35,3 +43,5 @@ export type DetourOption = {
   id: string; event: Event; route: WanderRoute; additionalMinutes: number;
   additionalDistanceMeters: number; arrivalTime: string;
 };
+export type SummaryPhoto = { stopId: string; placeName: string; url: string; authorAttributions: Attribution[] };
+export type WalkSummary = { photos: SummaryPhoto[] };

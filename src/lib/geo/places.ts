@@ -1,9 +1,11 @@
 import "server-only";
-import type { Coordinates, GenerateRequest, Place } from "../types";
+import type { Coordinates, GenerateRequest, Place, PlacePhotoRef } from "../types";
 import { distanceMeters, isCoordinates, searchRadius } from "./coordinates";
 
 const INCLUDED_TYPES = ["park", "botanical_garden", "tourist_attraction", "historical_landmark", "monument", "museum", "art_gallery", "observation_deck"];
-const FIELD_MASK = "places.id,places.displayName,places.location,places.types,places.attributions";
+// Photos share the Nearby Search Pro tier with displayName, so they add no request cost.
+const FIELD_MASK = "places.id,places.displayName,places.location,places.types,places.attributions,places.photos";
+export const PHOTO_NAME = /^places\/[A-Za-z0-9_-]{1,300}\/photos\/[A-Za-z0-9_-]{1,1000}$/;
 const VIEWPOINT_TYPES = ["observation_deck", "scenic_spot"];
 const ACTIVITY_TYPES = ["hiking_area", "botanical_garden", "art_gallery", "museum", "market"];
 const scenic: Record<Place["category"], number> = { park: 85, viewpoint: 95, historic: 80, art: 78, attraction: 72, path: 70 };
@@ -55,6 +57,16 @@ function attributions(raw: unknown): NonNullable<Place["attributions"]> {
   });
 }
 
+/** Keep only the first valid photo name; the image itself is requested on demand. */
+function firstPhoto(raw: unknown): PlacePhotoRef | undefined {
+  if (!Array.isArray(raw)) return undefined;
+  for (const value of raw.slice(0, 10)) {
+    const photo = record(value);
+    if (typeof photo?.name === "string" && PHOTO_NAME.test(photo.name)) return { name: photo.name, authorAttributions: attributions(photo.authorAttributions).slice(0, 5) };
+  }
+  return undefined;
+}
+
 /** Normalise named, relevant, nearby Google Places; scores are category proxies. */
 export function normalisePlaces(elements: unknown[], start: Coordinates, radius: number): Place[] {
   if (!isCoordinates(start) || !Number.isFinite(radius) || radius < 100 || radius > 3500) return [];
@@ -70,8 +82,9 @@ export function normalisePlaces(elements: unknown[], start: Coordinates, radius:
     const kind = category(types);
     if (!kind || typeof id !== "string" || !id || id.length > 120 || !name || name.length > 180 || !isCoordinates(coordinates) || distanceMeters(start, coordinates) > radius) continue;
     const normalizedId = `google-${id}`;
+    const photo = firstPhoto(element?.photos);
     if (places.some(place => place.id === normalizedId || distanceMeters(place, coordinates) < 45 || (place.name.toLowerCase() === name.toLowerCase() && distanceMeters(place, coordinates) < 180))) continue;
-    places.push({ id: normalizedId, name, ...coordinates, category: kind, description: descriptions[kind], baseScenicScore: scenic[kind], ...activity(types, kind), tags: { source: "google", google_types: types.join(",") }, attributions: attributions(element?.attributions) });
+    places.push({ id: normalizedId, name, ...coordinates, category: kind, description: descriptions[kind], baseScenicScore: scenic[kind], ...activity(types, kind), tags: { source: "google", google_types: types.join(",") }, attributions: attributions(element?.attributions), ...(photo ? { photo } : {}) });
   }
   return places.sort((a, b) => b.baseScenicScore - a.baseScenicScore || distanceMeters(start, a) - distanceMeters(start, b));
 }

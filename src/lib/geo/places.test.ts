@@ -26,6 +26,11 @@ describe("Google Places normalisation", () => {
     const input = { ...place("one"), attributions: [{ provider: "Local data provider", providerUri: "https://example.com/data" }, { provider: "Unsafe link", providerUri: "javascript:alert(1)" }, null] };
     expect(normalisePlaces([input], start, 1000)[0].attributions).toEqual([{ displayName: "Local data provider", uri: "https://example.com/data" }, { displayName: "Unsafe link" }]);
   });
+  it("keeps the first valid photo name with sanitised author attribution", () => {
+    const input = { ...place("one"), photos: [{ name: "../../evil" }, { name: "places/one/photos/AbC_-1", authorAttributions: [{ displayName: "A. Walker", uri: "https://maps.google.com/maps/contrib/1" }, { displayName: "Bad", uri: "javascript:alert(1)" }] }] };
+    expect(normalisePlaces([input], start, 1000)[0].photo).toEqual({ name: "places/one/photos/AbC_-1", authorAttributions: [{ displayName: "A. Walker", uri: "https://maps.google.com/maps/contrib/1" }, { displayName: "Bad" }] });
+    expect(normalisePlaces([{ ...place("two"), photos: [{ name: "places/two/photos/a?key=x" }] }], start, 1000)[0].photo).toBeUndefined();
+  });
   it("bounds the incoming collection and rejects invalid search areas", () => {
     const input = Array.from({ length: 40 }, (_, index) => place(String(index), "park", start.lat + index * 0.0005));
     expect(normalisePlaces(input, start, 3500).length).toBeLessThanOrEqual(20);
@@ -43,7 +48,7 @@ describe("Google Nearby Search requests", () => {
     expect(options.method).toBe("POST");
     expect(options.cache).toBe("no-store");
     expect(options.headers["X-Goog-Api-Key"]).toBe("test-server-secret");
-    expect(options.headers["X-Goog-FieldMask"]).toBe("places.id,places.displayName,places.location,places.types,places.attributions");
+    expect(options.headers["X-Goog-FieldMask"]).toBe("places.id,places.displayName,places.location,places.types,places.attributions,places.photos");
     const body = JSON.parse(options.body);
     expect(body).toMatchObject({ maxResultCount: 20, rankPreference: "DISTANCE", locationRestriction: { circle: { center: { latitude: start.lat, longitude: start.lng }, radius: 1200 } } });
     expect(body.includedTypes).toEqual(expect.arrayContaining(["park", "tourist_attraction", "historical_landmark", "monument", "museum", "art_gallery"]));

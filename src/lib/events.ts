@@ -1,9 +1,9 @@
 import "server-only";
 import { routeWalking } from "./geo/routing";
 import { estimateStopMinutes, scorePlaces, repetitionPenalty } from "./geo/scoring";
-import type { Coordinates, DetourOption, Event, GenerateRequest, WanderRoute } from "./types";
+import type { Coordinates, DetourOption, Event, GenerateRequest, SummaryPhoto, WanderRoute } from "./types";
 
-type CachedRoute = { request: GenerateRequest; route: WanderRoute; createdAt: number; detours?: Promise<DetourOption[]> };
+type CachedRoute = { request: GenerateRequest; route: WanderRoute; createdAt: number; detours?: Promise<DetourOption[]>; photos?: Promise<SummaryPhoto[]> };
 const routes = new Map<string, CachedRoute>();
 const CACHE_TTL_MS = 20 * 60 * 1000;
 
@@ -95,7 +95,7 @@ async function calculateEventDetours(context: CachedRoute, provider: EventProvid
       const eventRelevance = request.mood === "surprise" ? 80 :
         request.mood === "historic" && event.category === "history" ? 100 :
         request.mood === "hidden" && ["art", "music"].includes(event.category) ? 100 : 60;
-      const modified: WanderRoute = { ...route, event, id: `${route.id}:${event.id}`, name: `${route.name} + a sample event`, geometry: result.geometry, distanceMeters: result.distanceMeters, walkingMinutes, stopMinutes: route.stopMinutes + event.visitMinutes + timing.waitMinutes, bufferMinutes, totalMinutes: timing.totalMinutes, description: `${route.description} Includes a fictional sample event (${event.visitMinutes} minutes${timing.waitMinutes ? `, plus ${timing.waitMinutes} minutes waiting` : ""}).`, highlights: [...route.highlights.slice(0, 2), "Fictional sample event"] };
+      const modified: WanderRoute = { ...route, event, eventStopIndex: insertion - 1, id: `${route.id}:${event.id}`, name: `${route.name} + a sample event`, geometry: result.geometry, distanceMeters: result.distanceMeters, walkingMinutes, stopMinutes: route.stopMinutes + event.visitMinutes + timing.waitMinutes, bufferMinutes, totalMinutes: timing.totalMinutes, description: `${route.description} Includes a fictional sample event (${event.visitMinutes} minutes${timing.waitMinutes ? `, plus ${timing.waitMinutes} minutes waiting` : ""}).`, highlights: [...route.highlights.slice(0, 2), "Fictional sample event"] };
       modified.score = Math.max(0, scorePlaces(route.stops, request.mood, request.visitedIds, eventRelevance) - repetitionPenalty(result.geometry));
       modified.routingWarnings = result.warnings;
       options.push({ id: modified.id, event, route: modified, additionalMinutes: Math.max(0, modified.totalMinutes - route.totalMinutes), additionalDistanceMeters: Math.max(0, modified.distanceMeters - route.distanceMeters), arrivalTime: timing.arrivalTime });

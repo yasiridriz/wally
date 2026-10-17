@@ -9,8 +9,9 @@ function orderStops(stops: Place[], request: GenerateRequest): Place[] {
   let current: Coordinates = request.start;
   while (remaining.length) {
     remaining.sort((a, b) => distanceMeters(current, a) - distanceMeters(current, b) || a.id.localeCompare(b.id));
-    current = remaining.shift()!;
-    ordered.push(current as Place);
+    const next = remaining.shift()!;
+    ordered.push(next);
+    current = next;
   }
   if (request.mode !== "destination" || !request.destination) return ordered;
   const length = (points: Place[]) => pathDistance([request.start, ...points, request.destination!]);
