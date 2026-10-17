@@ -71,6 +71,11 @@ async function calculateEventDetours(context: CachedRoute, provider: EventProvid
     if (budget.remaining <= 0 || budget.rateLimited) break;
     const waypoints: Coordinates[] = [request.start, ...route.stops.map(({ lat, lng }) => ({ lat, lng }))];
     if (route.isLoop) waypoints.push(request.start);
+    else if (request.mode === "destination") {
+      const destination = route.destination ?? request.destination;
+      if (!destination) continue;
+      waypoints.push(destination);
+    }
     // Choose one inexpensive geometric insertion, then verify it on the network.
     let insertion = 1;
     let cost = Infinity;
@@ -92,6 +97,7 @@ async function calculateEventDetours(context: CachedRoute, provider: EventProvid
         request.mood === "hidden" && ["art", "music"].includes(event.category) ? 100 : 60;
       const modified: WanderRoute = { ...route, event, id: `${route.id}:${event.id}`, name: `${route.name} + a sample event`, geometry: result.geometry, distanceMeters: result.distanceMeters, walkingMinutes, stopMinutes: route.stopMinutes + event.visitMinutes + timing.waitMinutes, bufferMinutes, totalMinutes: timing.totalMinutes, description: `${route.description} Includes a fictional sample event (${event.visitMinutes} minutes${timing.waitMinutes ? `, plus ${timing.waitMinutes} minutes waiting` : ""}).`, highlights: [...route.highlights.slice(0, 2), "Fictional sample event"] };
       modified.score = Math.max(0, scorePlaces(route.stops, request.mood, request.visitedIds, eventRelevance) - repetitionPenalty(result.geometry));
+      modified.routingWarnings = result.warnings;
       options.push({ id: modified.id, event, route: modified, additionalMinutes: Math.max(0, modified.totalMinutes - route.totalMinutes), additionalDistanceMeters: Math.max(0, modified.distanceMeters - route.distanceMeters), arrivalTime: timing.arrivalTime });
     } catch {
       // A failed detour must never invalidate the user's original walk.

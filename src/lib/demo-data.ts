@@ -4,6 +4,7 @@ import { rankRoutes, scorePlaces } from "./geo/scoring";
 // Hand-drawn paths along Edinburgh streets and park paths. These fixtures are
 // illustrative, not surveyed routes or a substitute for live directions.
 export const DEMO_START: Coordinates = { lat: 55.9442, lng: -3.19055 };
+export const DEMO_DESTINATION: Coordinates = { lat: 55.94695, lng: -3.1891 };
 
 const places: Record<string, Place> = {
   middle: { id: "demo-middle-meadow", name: "Middle Meadow Walk", lat: 55.9429, lng: -3.19045, category: "path", description: "A broad tree-lined path into the Meadows, loved by everyday Edinburgh walkers.", baseScenicScore: 76 },
@@ -26,6 +27,15 @@ const fixtures: Fixture[] = [
   { name: "Edinburgh in miniature", description: "A sample wander between a grand hall, museum and beloved little dog.", stops: ["mcewan", "museum", "greyfriars"], path: [start, [-3.1904, 55.94455], [-3.18755, 55.9447], [-3.1877, 55.94525], [-3.18785, 55.94695], [-3.1891, 55.94695], [-3.1921, 55.9469], [-3.1916, 55.9455], [-3.1914, 55.9446], start] },
 ];
 
+const destination: [number, number] = [DEMO_DESTINATION.lng, DEMO_DESTINATION.lat];
+// Fixed museum-bound illustrations: Forrest Road / George IV Bridge, or
+// Bristo Square / Potterrow, followed by Chambers Street to the museum.
+const destinationFixtures: Fixture[] = [
+  { name: "Bobby on the way", description: "A sample route past Greyfriars Bobby, then along Chambers Street to the museum.", stops: ["greyfriars"], path: [start, [-3.1904, 55.94455], [-3.1914, 55.9446], [-3.1916, 55.9455], [-3.1921, 55.9469], [-3.1918, 55.94705], [-3.1904, 55.9470], destination] },
+  { name: "A grand arrival", description: "A sample museum-bound wander past Teviot and McEwan Hall, via Bristo Square and Potterrow.", stops: ["teviot", "mcewan"], path: [start, [-3.1905, 55.9437], [-3.1890, 55.9437], [-3.1890, 55.94395], [-3.1876, 55.94415], [-3.18755, 55.9447], [-3.1880, 55.9451], [-3.1877, 55.94525], [-3.18785, 55.94695], destination] },
+  { name: "The leafy way there", description: "A sample detour by George Square Gardens before approaching the museum along Potterrow and Chambers Street.", stops: ["george"], path: [start, [-3.1905, 55.9437], [-3.1894, 55.94365], [-3.1883, 55.94365], [-3.1873, 55.94365], [-3.1873, 55.94405], [-3.1876, 55.94415], [-3.1877, 55.94525], [-3.18785, 55.94695], destination] },
+];
+
 function pathDistance(path: [number, number][]) {
   const radians = Math.PI / 180;
   return path.slice(1).reduce((sum, point, index) => {
@@ -36,13 +46,14 @@ function pathDistance(path: [number, number][]) {
 }
 
 export function generateDemoRoutes(request: GenerateRequest): WanderRoute[] {
-  return rankRoutes(fixtures.map((fixture, index): WanderRoute => {
+  const candidates = request.mode === "destination" ? destinationFixtures : fixtures;
+  return rankRoutes(candidates.map((fixture, index): WanderRoute => {
     const stops = fixture.stops.map((id) => places[id]);
-    const path = request.mode === "loop" ? fixture.path : fixture.path.slice(0, fixture.path.findIndex((point) => point[0] === stops.at(-1)!.lng && point[1] === stops.at(-1)!.lat) + 1);
+    const path = request.mode === "explore" ? fixture.path.slice(0, fixture.path.findIndex((point) => point[0] === stops.at(-1)!.lng && point[1] === stops.at(-1)!.lat) + 1) : fixture.path;
     const distanceMeters = Math.round(pathDistance(path));
     const walkingMinutes = Math.ceil(distanceMeters / 70);
     const stopMinutes = stops.length * 2;
     const bufferMinutes = Math.max(2, Math.ceil(walkingMinutes * 0.1));
-    return { id: `demo-${request.mode}-${index}`, name: fixture.name, description: fixture.description, geometry: { type: "LineString", coordinates: path }, stops, distanceMeters, walkingMinutes, stopMinutes, bufferMinutes, totalMinutes: walkingMinutes + stopMinutes + bufferMinutes, score: scorePlaces(stops, request.mood, request.visitedIds), highlights: [stops[0].category === "park" ? "A little green space" : "Local discoveries", request.mode === "loop" ? "Back where you started" : "A fresh finish", "Illustrative sample route"], isLoop: request.mode === "loop", source: "demo" };
+    return { id: `demo-${request.mode}-${index}`, name: fixture.name, description: fixture.description, geometry: { type: "LineString", coordinates: path }, stops, distanceMeters, walkingMinutes, stopMinutes, bufferMinutes, totalMinutes: walkingMinutes + stopMinutes + bufferMinutes, score: scorePlaces(stops, request.mood, request.visitedIds), highlights: [stops[0].category === "park" ? "A little green space" : "Local discoveries", request.mode === "loop" ? "Back where you started" : request.mode === "destination" ? "Finish at the museum" : "A fresh finish", "Illustrative sample route"], isLoop: request.mode === "loop", source: "demo", ...(request.mode === "destination" ? { destination: DEMO_DESTINATION } : {}) };
   }).filter((route) => route.totalMinutes <= request.duration));
 }

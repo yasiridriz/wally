@@ -2,7 +2,7 @@ import { describe, expect, it, vi } from "vitest";
 vi.mock("server-only", () => ({}));
 vi.mock("./geo/routing", () => ({ routeWalking: vi.fn() }));
 import { evaluateEventTiming, registerGeneratedRoutes, getRouteContext, buildEventDetours } from "./events";
-import { generateDemoRoutes, DEMO_START } from "./demo-data";
+import { generateDemoRoutes, DEMO_START, DEMO_DESTINATION } from "./demo-data";
 import { generateRoutes } from "../app/actions/generate-routes";
 import { routeWalking } from "./geo/routing";
 import type { Event, GenerateRequest } from "./types";
@@ -57,6 +57,25 @@ describe("event feasibility", () => {
     vi.mocked(routeWalking).mockImplementation(async points => ({ geometry: route.geometry, distanceMeters: 1000, durationSeconds: 1200, segmentSeconds: points.slice(1).map(() => 1200 / (points.length - 1)) }));
     expect(await buildEventDetours(getRouteContext(route.id)!, async () => [example])).toEqual([]);
   });
+  it("inserts an event before a chosen destination without replacing the endpoint", async () => {
+    const destinationRequest: GenerateRequest = { ...request, mode: "destination", destination: DEMO_DESTINATION, duration: 90, demo: false };
+    const route = { ...generateDemoRoutes(destinationRequest)[0], id: "destination-event-test", source: "live" as const };
+    registerGeneratedRoutes(destinationRequest, [route]);
+    const now = Date.now();
+    const example = { ...event, location: DEMO_START, startTime: new Date(now - 60000).toISOString(), endTime: new Date(now + 3600000).toISOString() };
+    vi.mocked(routeWalking).mockImplementation(async points => ({
+      geometry: { type: "LineString", coordinates: points.map(point => [point.lng, point.lat]) },
+      distanceMeters: 800, durationSeconds: 600, segmentSeconds: points.slice(1).map(() => 600 / (points.length - 1)),
+    }));
+    const options = await buildEventDetours(getRouteContext(route.id)!, async () => [example]);
+    expect(options).toHaveLength(1);
+    const submitted = vi.mocked(routeWalking).mock.calls.at(-1)![0];
+    expect(submitted.at(-1)).toEqual(DEMO_DESTINATION);
+    expect(submitted.slice(1, -1)).toContainEqual(example.location);
+    expect(options[0].route.geometry.coordinates.at(-1)).toEqual([DEMO_DESTINATION.lng, DEMO_DESTINATION.lat]);
+    expect(options[0].route.destination).toEqual(DEMO_DESTINATION);
+    expect(options[0].route.isLoop).toBe(false);
+  });
 });
 
 describe("Edinburgh samples", () => {
@@ -84,6 +103,23 @@ describe("Edinburgh samples", () => {
       if (match) expect(match.score).toBeLessThan(route.score);
     }
     expect(generateDemoRoutes({ ...request, mood: "historic" })).not.toEqual(generateDemoRoutes({ ...request, mood: "green" }));
+  });
+  it.each([15, 30, 45, 60, 90] as const)("keeps a fixed museum destination within a %i-minute sample budget", duration => {
+    const routes = generateDemoRoutes({ ...request, mode: "destination", destination: { lat: 0, lng: 0 }, duration });
+    expect(routes.length).toBeGreaterThan(0);
+    expect(routes.length).toBeLessThanOrEqual(3);
+    for (const route of routes) {
+      expect(route.totalMinutes).toBeLessThanOrEqual(duration);
+      expect(route.destination).toEqual(DEMO_DESTINATION);
+      expect(route.geometry.coordinates[0]).toEqual([DEMO_START.lng, DEMO_START.lat]);
+      expect(route.geometry.coordinates.at(-1)).toEqual([DEMO_DESTINATION.lng, DEMO_DESTINATION.lat]);
+      expect(route.isLoop).toBe(false);
+      expect(route.geometry.coordinates.length).toBeGreaterThan(route.stops.length + 2);
+    }
+  });
+  it("does not shorten destination estimates to fit an impossible budget", () => {
+    // Exercise the pure fixture filter below the allowed public duration range.
+    expect(generateDemoRoutes({ ...request, mode: "destination", duration: 1 as GenerateRequest["duration"] })).toEqual([]);
   });
 });
 

@@ -2,65 +2,86 @@ import "server-only";
 import type { Coordinates, Place } from "../types";
 import { distanceMeters, isCoordinates } from "./coordinates";
 
-const cache = new Map<string, { expires: number; places: Place[] }>();
-type OsmElement = { type: string; id: number; lat?: number; lon?: number; center?: { lat: number; lon: number }; tags?: Record<string, string> };
-
-function category(tags: Record<string, string>): Place["category"] {
-  if (tags.leisure === "park" || tags.leisure === "garden") return "park";
-  if (tags.tourism === "viewpoint") return "viewpoint";
-  if (tags.historic) return "historic";
-  if (tags.tourism === "artwork") return "art";
-  if (tags.highway) return "path";
-  return "attraction";
-}
-
+const INCLUDED_TYPES = ["park", "botanical_garden", "tourist_attraction", "historical_landmark", "monument", "museum", "art_gallery", "observation_deck"];
+const FIELD_MASK = "places.id,places.displayName,places.location,places.types,places.attributions";
 const scenic: Record<Place["category"], number> = { park: 85, viewpoint: 95, historic: 80, art: 78, attraction: 72, path: 70 };
 const descriptions: Record<Place["category"], string> = {
-  park: "A green pause among the city streets.", viewpoint: "A mapped viewpoint worth slowing down for.",
-  historic: "A piece of local history to discover on foot.", art: "Public art that rewards a closer look.",
-  attraction: "A locally mapped point of interest along the way.", path: "A named pedestrian path for a change of scenery.",
+  park: "A green pause among the city streets.", viewpoint: "A viewpoint worth slowing down for.",
+  historic: "A piece of local history to discover on foot.", art: "A place to discover art along the way; opening hours may vary.",
+  attraction: "A local point of interest along the way; this walk stops outside.", path: "A pedestrian path for a change of scenery.",
 };
 
-export function normalisePlaces(elements: OsmElement[], start: Coordinates, radius: number): Place[] {
+function record(value: unknown): Record<string, unknown> | null {
+  return value && typeof value === "object" && !Array.isArray(value) ? value as Record<string, unknown> : null;
+}
+
+function category(types: string[]): Place["category"] | null {
+  if (types.some(type => ["observation_deck", "scenic_spot"].includes(type))) return "viewpoint";
+  if (types.some(type => ["park", "city_park", "national_park", "state_park", "botanical_garden", "garden"].includes(type))) return "park";
+  if (types.some(type => ["historical_landmark", "historical_place", "monument", "castle", "cultural_landmark", "history_museum"].includes(type))) return "historic";
+  if (types.some(type => ["art_gallery", "art_museum", "sculpture"].includes(type))) return "art";
+  if (types.some(type => ["tourist_attraction", "museum"].includes(type))) return "attraction";
+  return null;
+}
+
+function attributions(raw: unknown): NonNullable<Place["attributions"]> {
+  if (!Array.isArray(raw)) return [];
+  return raw.slice(0, 20).flatMap(value => {
+    const attribution = record(value);
+    // REST Place.Attribution uses provider/providerUri, unlike review authors.
+    const displayName = attribution?.provider ?? attribution?.displayName;
+    const uri = attribution?.providerUri ?? attribution?.uri;
+    if (typeof displayName !== "string" || !displayName.trim() || displayName.length > 500) return [];
+    let safeUri: string | undefined;
+    if (typeof uri === "string" && uri.length <= 2048) {
+      try { if (["https:", "http:"].includes(new URL(uri).protocol)) safeUri = uri; } catch { /* Keep the provider name even if its link is invalid. */ }
+    }
+    return [{ displayName: displayName.trim(), ...(safeUri ? { uri: safeUri } : {}) }];
+  });
+}
+
+/** Normalise named, relevant, nearby Google Places; scores are category proxies. */
+export function normalisePlaces(elements: unknown[], start: Coordinates, radius: number): Place[] {
+  if (!isCoordinates(start) || !Number.isFinite(radius) || radius < 100 || radius > 3500) return [];
   const places: Place[] = [];
-  for (const element of elements.slice(0, 1000)) {
-    if (!element || typeof element !== "object") continue;
-    const tags = element.tags;
-    const name = typeof tags?.name === "string" ? tags.name.trim() : "";
-    const coords = { lat: element.lat ?? element.center?.lat, lng: element.lon ?? element.center?.lon };
-    if (!tags || !Number.isSafeInteger(element.id) || !["node", "way", "relation"].includes(element.type) || !name || name.length > 180 || !isCoordinates(coords) || tags.access === "private" || tags.access === "no" || distanceMeters(start, coords) > radius) continue;
-    if (places.some((place) => distanceMeters(place, coords) < 45 || (place.name.toLowerCase() === name.toLowerCase() && distanceMeters(place, coords) < 180))) continue;
-    const kind = category(tags);
-    places.push({ id: `osm-${element.type}-${element.id}`, name, ...coords, category: kind,
-      description: descriptions[kind], baseScenicScore: scenic[kind],
-      tags: Object.fromEntries(Object.entries(tags).filter(([key]) => ["tourism", "historic", "leisure", "artwork_type", "highway"].includes(key))),
-    });
+  for (const raw of elements.slice(0, 20)) {
+    const element = record(raw);
+    const displayName = record(element?.displayName);
+    const location = record(element?.location);
+    const name = typeof displayName?.text === "string" ? displayName.text.trim() : "";
+    const id = element?.id;
+    const coordinates = { lat: location?.latitude, lng: location?.longitude };
+    const types = Array.isArray(element?.types) ? element.types.filter((type): type is string => typeof type === "string").slice(0, 30) : [];
+    const kind = category(types);
+    if (!kind || typeof id !== "string" || !id || id.length > 120 || !name || name.length > 180 || !isCoordinates(coordinates) || distanceMeters(start, coordinates) > radius) continue;
+    const normalizedId = `google-${id}`;
+    if (places.some(place => place.id === normalizedId || distanceMeters(place, coordinates) < 45 || (place.name.toLowerCase() === name.toLowerCase() && distanceMeters(place, coordinates) < 180))) continue;
+    places.push({ id: normalizedId, name, ...coordinates, category: kind, description: descriptions[kind], baseScenicScore: scenic[kind], tags: { source: "google", google_types: types.join(",") }, attributions: attributions(element?.attributions) });
   }
-  // Spread the discovery across distance bands so short and longer candidates survive.
-  return places.sort((a, b) => b.baseScenicScore - a.baseScenicScore || distanceMeters(start, a) - distanceMeters(start, b)).slice(0, 20);
+  return places.sort((a, b) => b.baseScenicScore - a.baseScenicScore || distanceMeters(start, a) - distanceMeters(start, b));
 }
 
 export async function discoverPlaces(start: Coordinates, radius: number): Promise<Place[]> {
   if (!isCoordinates(start) || !Number.isFinite(radius) || radius < 100 || radius > 3500) throw new Error("Invalid discovery area.");
-  const key = `${start.lat.toFixed(4)},${start.lng.toFixed(4)}:${Math.round(radius)}`;
-  const existing = cache.get(key);
-  if (existing && existing.expires > Date.now()) return existing.places;
-  const around = `(around:${Math.round(radius)},${start.lat},${start.lng})`;
-  const query = `[out:json][timeout:15];(nwr${around}[name][leisure~"^(park|garden)$"];nwr${around}[name][tourism~"^(viewpoint|artwork|attraction)$"];nwr${around}[name][historic];way${around}[name][highway~"^(footway|pedestrian|path)$"];);out center 150;`;
+  const apiKey = process.env.GOOGLE_MAPS_API_KEY;
+  if (!apiKey) throw new Error("Live place discovery needs GOOGLE_MAPS_API_KEY. Select Demo Mode for sample walks.");
   try {
-    const response = await fetch("https://overpass-api.de/api/interpreter", {
-      method: "POST", headers: { "Content-Type": "application/x-www-form-urlencoded" },
-      body: new URLSearchParams({ data: query }), signal: AbortSignal.timeout(18_000), cache: "no-store",
+    // No application or Next.js response cache: Google place content stays ephemeral.
+    const response = await fetch("https://places.googleapis.com/v1/places:searchNearby", {
+      method: "POST",
+      headers: { "Content-Type": "application/json", "X-Goog-Api-Key": apiKey, "X-Goog-FieldMask": FIELD_MASK },
+      body: JSON.stringify({ includedTypes: INCLUDED_TYPES, maxResultCount: 20, rankPreference: "DISTANCE", locationRestriction: { circle: { center: { latitude: start.lat, longitude: start.lng }, radius } } }),
+      signal: AbortSignal.timeout(10_000), cache: "no-store",
     });
-    if (!response.ok) throw new Error("Nearby place discovery is busy. Please try again or use Demo Mode.");
-    const data = await response.json();
-    if (!Array.isArray(data?.elements) || data.remark) throw new Error("Nearby place discovery returned incomplete results. Please try again or use Demo Mode.");
-    const places = normalisePlaces(data.elements, start, radius);
-    if (cache.size >= 40) cache.delete(cache.keys().next().value!);
-    cache.set(key, { expires: Date.now() + 5 * 60_000, places });
-    return places;
+    if (response.status === 403) throw new Error("Google Places access was denied. Check that Places API (New) is enabled and the server key is authorised.");
+    if (response.status === 429) throw new Error("Google Places is at its request limit. Try again later or select Demo Mode.");
+    if (!response.ok) throw new Error("Nearby place discovery is unavailable. Please try again or select Demo Mode.");
+    const data: unknown = await response.json();
+    const result = record(data);
+    if (!result || result.error || (result.places !== undefined && !Array.isArray(result.places))) throw new Error("Nearby place discovery returned invalid results. Please try again or select Demo Mode.");
+    return normalisePlaces((result.places ?? []) as unknown[], start, radius);
   } catch (error) {
-    if (error instanceof Error && !["TimeoutError", "AbortError", "TypeError"].includes(error.name)) throw error;
-    throw new Error("Nearby place discovery could not connect. Please try again or use Demo Mode.");
+    if (error instanceof Error && !["TimeoutError", "AbortError", "TypeError", "SyntaxError"].includes(error.name)) throw error;
+    throw new Error("Nearby place discovery could not connect. Please try again or select Demo Mode.");
   }
 }

@@ -1,41 +1,91 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
-import { CircleMarker, MapContainer, Marker, Polyline, TileLayer, Tooltip, useMap, useMapEvents } from "react-leaflet";
-import { divIcon, DomEvent, latLngBounds } from "leaflet";
+import { Compass, Info } from "lucide-react";
 import type { Coordinates, Event, WanderRoute } from "@/lib/types";
 import { ROUTE_COLORS } from "../route-card";
+import { loadGoogleMaps } from "./google-maps-loader";
+import SampleRoutePreview from "./sample-route-preview";
 
-function MapInteraction({ start, routes, selected, onStartChange, canSetStart }: { start: Coordinates; routes: WanderRoute[]; selected?: WanderRoute; onStartChange: (coordinates: Coordinates) => void; canSetStart: boolean }) {
-  const map = useMap();
-  useMapEvents({ click: event => { if (canSetStart) onStartChange({ lat: event.latlng.lat, lng: event.latlng.lng }); } });
+type Props = { start: Coordinates; hasStart?: boolean; destination?: Coordinates; routes: WanderRoute[]; selected?: WanderRoute; onStartChange: (coordinates: Coordinates) => void; canSetStart: boolean; event?: Event };
+const FLAG = '<svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 22V3m0 0c6-5 10 5 16 0v11c-6 5-10-5-16 0"/></svg>';
+
+export default function WanderMap(props: Props) {
+  const { canSetStart, onStartChange } = props;
+  const container = useRef<HTMLDivElement>(null);
+  const initialStart = useRef(props.start);
+  const map = useRef<google.maps.Map | null>(null);
+  const [ready, setReady] = useState(false);
+  const [error, setError] = useState("");
+  const hasBrowserKey = Boolean(process.env.NEXT_PUBLIC_GOOGLE_MAPS_API_KEY);
+
   useEffect(() => {
-    if (selected) {
-      const bounds = latLngBounds(selected.geometry.coordinates.map(coordinate => [coordinate[1], coordinate[0]] as [number, number]));
+    if (!hasBrowserKey) return;
+    let cancelled = false;
+    const handleAuthError = (event: globalThis.Event) => setError((event as CustomEvent<string>).detail);
+    window.addEventListener("wally:maps-auth-error", handleAuthError);
+    loadGoogleMaps().then(maps => {
+      if (cancelled || !container.current) return;
+      map.current = new maps.Map(container.current, {
+        center: initialStart.current, zoom: 14,
+        mapId: process.env.NEXT_PUBLIC_GOOGLE_MAPS_MAP_ID || "DEMO_MAP_ID",
+        mapTypeControl: false, streetViewControl: false, fullscreenControl: false,
+        clickableIcons: false, gestureHandling: "greedy", zoomControl: true,
+        zoomControlOptions: { position: maps.ControlPosition.RIGHT_BOTTOM },
+      });
+      setReady(true);
+    }).catch(reason => { if (!cancelled) setError(reason instanceof Error ? reason.message : "Google Maps couldn’t load. Refresh to try again."); });
+    return () => { cancelled = true; window.removeEventListener("wally:maps-auth-error", handleAuthError); if (map.current) google.maps.event.clearInstanceListeners(map.current); map.current = null; };
+  }, [hasBrowserKey]);
+
+  useEffect(() => {
+    if (!ready || !map.current) return;
+    const listener = map.current.addListener("click", (event: google.maps.MapMouseEvent) => { if (canSetStart && event.latLng) onStartChange(event.latLng.toJSON()); });
+    return () => listener.remove();
+  }, [ready, canSetStart, onStartChange]);
+
+  useEffect(() => {
+    if (!ready || !map.current) return;
+    const currentMap = map.current;
+    const polylines = props.routes.map((route, index) => new google.maps.Polyline({
+      map: currentMap, path: route.geometry.coordinates.map(([lng, lat]) => ({ lat, lng })),
+      strokeColor: ROUTE_COLORS[index % ROUTE_COLORS.length], strokeWeight: route.id === props.selected?.id ? 6 : 3,
+      strokeOpacity: route.id === props.selected?.id ? .95 : .35, zIndex: route.id === props.selected?.id ? 2 : 1,
+    }));
+    const markers: google.maps.marker.AdvancedMarkerElement[] = [];
+    function addMarker(position: Coordinates, className: string, title: string, content?: string, html = false) {
+      const element = document.createElement("div"); element.className = className;
+      if (content) { if (html) element.innerHTML = content; else element.textContent = content; }
+      element.setAttribute("aria-label", title);
+      markers.push(new google.maps.marker.AdvancedMarkerElement({ map: currentMap, position, title, content: element }));
+    }
+    if (props.hasStart !== false) addMarker(props.start, "start-map-marker", "Start your wander here");
+    const endpoint = props.selected?.destination || props.destination;
+    if (endpoint) addMarker(endpoint, "endpoint-map-marker", "Your destination · finish here", FLAG, true);
+    props.selected?.stops.forEach((stop, index) => addMarker(stop, "numbered-map-marker", stop.name, String(index + 1)));
+    if (props.event) addMarker(props.event.location, "event-map-marker", `Fictional sample event: ${props.event.name}`, "E");
+    return () => { polylines.forEach(line => line.setMap(null)); markers.forEach(marker => { marker.map = null; }); };
+  }, [ready, props.start, props.hasStart, props.destination, props.routes, props.selected, props.event]);
+
+  useEffect(() => {
+    if (!ready || !map.current || !container.current) return;
+    const currentMap = map.current;
+    function fit() {
+      const bounds = new google.maps.LatLngBounds();
+      if (props.selected) props.selected.geometry.coordinates.forEach(([lng, lat]) => bounds.extend({ lat, lng }));
+      else { bounds.extend(props.start); if (props.destination) bounds.extend(props.destination); }
       const desktop = window.innerWidth >= 768;
-      map.fitBounds(bounds, { paddingTopLeft: desktop ? [440, 110] : [30, 100], paddingBottomRight: desktop ? [75, 80] : [30, Math.min(window.innerHeight * .55, 440)], maxZoom: 16, animate: true });
-    } else map.setView([start.lat, start.lng], map.getZoom(), { animate: true });
-  }, [map, selected, start]);
-  useEffect(() => { const observer = new ResizeObserver(() => map.invalidateSize()); observer.observe(map.getContainer()); return () => observer.disconnect(); }, [map]);
-  return <>{routes.map((route, index) => <Polyline key={route.id} positions={route.geometry.coordinates.map(coordinate => [coordinate[1], coordinate[0]] as [number, number])} pathOptions={{ color: ROUTE_COLORS[index % ROUTE_COLORS.length], weight: selected?.id === route.id ? 6 : 3, opacity: selected?.id === route.id ? .95 : .35, lineCap: "round", lineJoin: "round" }} />)}</>;
-}
+      currentMap.fitBounds(bounds, { top: desktop ? 85 : 55, right: 55, bottom: 50, left: 45 });
+      const listener = google.maps.event.addListenerOnce(currentMap, "idle", () => { if ((currentMap.getZoom() || 0) > 16) currentMap.setZoom(16); });
+      return listener;
+    }
+    let idleListener = fit();
+    const observer = new ResizeObserver(() => { idleListener.remove(); google.maps.event.trigger(currentMap, "resize"); idleListener = fit(); });
+    observer.observe(container.current);
+    return () => { observer.disconnect(); idleListener.remove(); };
+  }, [ready, props.start, props.destination, props.selected]);
 
-export default function WanderMap({ start, routes, selected, onStartChange, canSetStart, event }: { start: Coordinates; routes: WanderRoute[]; selected?: WanderRoute; onStartChange: (coordinates: Coordinates) => void; canSetStart: boolean; event?: Event }) {
-  const [tilesFailed, setTilesFailed] = useState(false);
-  return <MapContainer center={[start.lat, start.lng]} zoom={14} zoomControl={false} className="wander-map" scrollWheelZoom aria-label="Interactive walking route map">
-    <TileLayer attribution={'&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors'} url="https://tile.openstreetmap.org/{z}/{x}/{y}.png" maxZoom={19} eventHandlers={{ tileerror: () => setTilesFailed(true) }} />
-    {tilesFailed ? <div className="tile-error-notice" role="status">Map tiles couldn’t load. Check your connection; route planning remains available.</div> : null}
-    <MapInteraction start={start} routes={routes} selected={selected} onStartChange={onStartChange} canSetStart={canSetStart} />
-    <CircleMarker center={[start.lat, start.lng]} radius={9} pathOptions={{ color: "#fffdf8", fillColor: "#173e32", fillOpacity: 1, weight: 4 }}><Tooltip>Start your wander here</Tooltip></CircleMarker>
-    {selected?.stops.map((stop, index) => <Marker key={stop.id} position={[stop.lat, stop.lng]} icon={divIcon({ className: "numbered-map-marker", html: `<span>${index + 1}</span>`, iconSize: [28, 28], iconAnchor: [14, 14] })}><Tooltip direction="top">{stop.name}</Tooltip></Marker>)}
-    {event ? <CircleMarker center={[event.location.lat, event.location.lng]} radius={10} pathOptions={{ color: "white", fillColor: "#c77c45", fillOpacity: 1, weight: 3 }}><Tooltip>Sample event: {event.name}</Tooltip></CircleMarker> : null}
-    <MapButtons />
-  </MapContainer>;
-}
-
-function MapButtons() {
-  const map = useMap();
-  const controls = useRef<HTMLDivElement>(null);
-  useEffect(() => { if (controls.current) { DomEvent.disableClickPropagation(controls.current); DomEvent.disableScrollPropagation(controls.current); } }, []);
-  return <div ref={controls} className="map-zoom" aria-label="Map zoom controls"><button onClick={event => { event.stopPropagation(); map.zoomIn(); }} aria-label="Zoom in">+</button><button onClick={event => { event.stopPropagation(); map.zoomOut(); }} aria-label="Zoom out">−</button></div>;
+  if (!hasBrowserKey) return <SampleRoutePreview start={props.start} routes={props.routes} selected={props.selected} />;
+  const showSampleFallback = Boolean(error) && (!props.selected || props.selected.source === "demo");
+  return <div className="google-map-frame"><div ref={container} className={`wander-map ${showSampleFallback ? "failed-map" : ""}`} aria-label="Interactive Google Maps walking route map" />{showSampleFallback ? <div className="schematic-fallback"><SampleRoutePreview start={props.start} routes={props.routes} selected={props.selected} /></div> : null}{!ready && !error ? <div className="google-map-loading"><Compass size={30} /><span>Unfolding Google Maps…</span></div> : null}{error ? <div className={`google-map-error ${showSampleFallback ? "has-schematic" : ""}`} role="alert"><Info size={19} /><div><strong>The map needs a little attention</strong><p>{error}</p><small>Demo routes remain available from the planner. Refresh after updating your Google Maps setup.</small></div></div> : null}</div>;
 }
