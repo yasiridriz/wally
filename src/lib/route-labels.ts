@@ -20,7 +20,7 @@ export function moodsLabel(moods: readonly MoodTag[]): string {
 }
 
 /** The summary bar line, e.g. "Loop back · Historic" or "Anywhere · Surprise me". */
-export function routeShapeLabel({ loop, destinationLabel, moods, includeEvents }: { loop: boolean; destinationLabel?: string; moods: readonly MoodTag[]; includeEvents: boolean }): string {
+export function routeShapeLabel({ loop, destinationLabel, moods, includeEvents, favourites = false }: { loop: boolean; destinationLabel?: string; moods: readonly MoodTag[]; includeEvents: boolean; favourites?: boolean }): string {
   const shape = loop ? "Loop back" : destinationLabel ? `To ${destinationLabel}` : "Anywhere";
-  return [shape, moodsLabel(moods), includeEvents ? "Event detours" : ""].filter(Boolean).join(" · ");
+  return [shape, moodsLabel(moods), favourites ? "Favourites" : "", includeEvents ? "Event detours" : ""].filter(Boolean).join(" · ");
 }

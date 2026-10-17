@@ -3,6 +3,8 @@
 import { useEffect, useRef, useState, useSyncExternalStore } from "react";
 import { generateRoutes } from "@/app/actions/generate-routes";
 import { getEventDetours } from "@/app/actions/get-events";
+import { submitReview } from "@/app/actions/submit-review";
+import { HISTORY_LIMIT, favouritePlaces, memoryHints, restoreHistory, summarizePlace, type HistoryEntry } from "@/lib/memory";
 import { DEMO_DESTINATION, DEMO_START } from "@/lib/demo-data";
 import { clampDuration } from "@/lib/duration";
 import { DEFAULT_PREFERENCES, normalizeMoods, persistablePreferences, restorePreferences, type Preferences } from "@/lib/preferences";
@@ -34,6 +36,8 @@ export function usePlanner(hasLiveSetup: boolean) {
   const [routes, setRoutes] = useState<WanderRoute[]>([]);
   const [selectedId, setSelectedId] = useState<string>();
   const [visited, setVisited] = useState<string[]>([]);
+  // Path history: routes the user opened, with their reviews. Browser-only.
+  const [history, setHistory] = useState<HistoryEntry[]>([]);
   const [loading, setLoading] = useState(false);
   const [locating, setLocating] = useState(false);
   const [generated, setGenerated] = useState(false);
@@ -56,6 +60,7 @@ export function usePlanner(hasLiveSetup: boolean) {
     try {
       const stored = JSON.parse(localStorage.getItem("wally:visited:v1") || "[]");
       if (Array.isArray(stored)) setVisited(stored.filter((id): id is string => typeof id === "string").slice(0, 500));
+      setHistory(restoreHistory(JSON.parse(localStorage.getItem("wally:history:v1") || "[]")));
       setPreferencesState(restorePreferences(JSON.parse(localStorage.getItem("wally:preferences:v1") || "null"), hasLiveSetup));
     } catch { /* Browsers may block local storage. The walk still works. */ }
   }, [hasLiveSetup]);
@@ -70,7 +75,8 @@ export function usePlanner(hasLiveSetup: boolean) {
   const selected = routes.find(route => route.id === selectedId);
   const shownRoute = preview?.route || selected;
   const shownRoutes = preview && selected ? routes.map(route => route.id === selected.id ? preview.route : route) : routes;
-  const tagCount = preferences.moods.length + (preferences.includeEvents ? 1 : 0);
+  const tagCount = preferences.moods.length + (preferences.includeEvents ? 1 : 0) + (preferences.favourites ? 1 : 0);
+  const favouriteCount = history.filter(entry => entry.favourite).length;
 
   function clearResults() {
     requestVersion.current++; detourVersion.current++;
@@ -93,7 +99,8 @@ export function usePlanner(hasLiveSetup: boolean) {
   const toggleMood = (mood: MoodTag) => setPreferences({ moods: preferences.moods.includes(mood) ? preferences.moods.filter(value => value !== mood) : normalizeMoods([...preferences.moods, mood]) });
   const surpriseMe = () => setPreferences({ moods: [] });
   const toggleEvents = () => setPreferences({ includeEvents: !preferences.includeEvents });
-  const resetTags = () => setPreferences({ moods: [], includeEvents: false });
+  const toggleFavourites = () => setPreferences({ favourites: !preferences.favourites });
+  const resetTags = () => setPreferences({ moods: [], includeEvents: false, favourites: false });
   const toggleDemo = () => setPreferences({ demo: !demo });
   // Running plans travel 2.25x faster, so the same time budget reaches further.
   const togglePace = () => setPreferences({ pace: preferences.pace === "run" ? "walk" : "run" });
@@ -153,6 +160,7 @@ export function usePlanner(hasLiveSetup: boolean) {
     try {
       const result = await generateRoutes({
         duration: preferences.duration, moods: preferences.moods, mode, pace: preferences.pace, includeEvents: preferences.includeEvents, demo,
+        memory: memoryHints(history), favourites: preferences.favourites, ...(preferences.favourites ? { favouritePlaces: favouritePlaces(history) } : {}),
         start: startPoint, ...(mode === "destination" ? { destination: effectiveDestination } : {}), visitedIds: visited,
       });
       if (version !== requestVersion.current) return;
@@ -177,7 +185,62 @@ export function usePlanner(hasLiveSetup: boolean) {
     requestLocation(coordinates => void run(coordinates, onStart, onFail), message => { setFormError(message); onFail?.(); });
   }
 
+  function saveHistory(next: HistoryEntry[]) {
+    setHistory(next);
+    try { localStorage.setItem("wally:history:v1", JSON.stringify(next)); } catch { /* Optional persistence. */ }
+  }
+  const sameStops = (entry: HistoryEntry, route: WanderRoute) => entry.mode === mode && entry.stops.length === route.stops.length && entry.stops.every((stop, index) => stop.id === route.stops[index].id);
+  /** A clicked route joins the top of history. Opening the same stops again refreshes that entry and keeps its review. */
+  function remember(route: WanderRoute): HistoryEntry {
+    const existing = history.find(entry => sameStops(entry, route));
+    const entry: HistoryEntry = {
+      id: existing?.id ?? crypto.randomUUID(), routeId: route.id, name: route.name, stops: route.stops.map(summarizePlace),
+      mode, pace: route.pace ?? preferences.pace, moods: preferences.moods, duration: preferences.duration,
+      totalMinutes: route.totalMinutes, distanceMeters: route.distanceMeters, source: route.source, selectedAt: new Date().toISOString(),
+      favourite: existing?.favourite ?? false, ...(existing?.rating ? { rating: existing.rating } : {}),
+    };
+    saveHistory([entry, ...history.filter(other => other.id !== entry.id)].slice(0, HISTORY_LIMIT));
+    return entry;
+  }
+  type Review = { rating?: number; favourite?: boolean; clearRating?: boolean };
+  /** Applies a review to an entry. Live reviews go to the server for future ranking; demo routes stay local. */
+  function review(entry: HistoryEntry, change: Review, base = history) {
+    const { rating, ...rest } = entry;
+    const next: HistoryEntry = { ...rest, favourite: change.favourite ?? entry.favourite,
+      ...(change.clearRating ? {} : change.rating ?? rating ? { rating: change.rating ?? rating } : {}) };
+    saveHistory(base.some(value => value.id === next.id) ? base.map(value => value.id === next.id ? next : value) : [next, ...base].slice(0, HISTORY_LIMIT));
+    if (next.source !== "live" || (!next.rating && !next.favourite)) return;
+    void submitReview({ reviewId: next.id, rating: next.rating ?? null, favourite: next.favourite, routeName: next.name, mode: next.mode, pace: next.pace,
+      moods: next.moods, duration: next.duration, totalMinutes: next.totalMinutes, distanceMeters: next.distanceMeters, stops: next.stops }).catch(() => undefined);
+  }
+  /** Tapping the current star again clears the rating. */
+  const ratingChange = (entry: HistoryEntry | undefined, rating: number): Review => entry?.rating === rating ? { clearRating: true } : { rating };
+  function rateHistory(id: string, rating: number) {
+    const entry = history.find(value => value.id === id);
+    if (entry) review(entry, ratingChange(entry, rating));
+  }
+  function toggleHistoryFavourite(id: string) {
+    const entry = history.find(value => value.id === id);
+    if (entry) review(entry, { favourite: !entry.favourite });
+  }
+  /** Reviews a route on screen, adding it to history first if it was never clicked. */
+  function reviewRoute(route: WanderRoute, change: { rating?: number; favourite?: boolean }) {
+    if (!route.stops.length || route.overBudget) return;
+    const existing = history.find(entry => sameStops(entry, route));
+    const entry = existing ?? remember(route);
+    const base = existing ? history : [entry, ...history];
+    review(entry, change.rating !== undefined ? ratingChange(existing, change.rating) : { favourite: change.favourite }, base);
+  }
+  const removeHistory = (id: string) => saveHistory(history.filter(entry => entry.id !== id));
+  const clearHistory = () => saveHistory([]);
+  /** The history entry for a route on screen, if it was opened. */
+  const historyFor = (route: WanderRoute) => history.find(entry => sameStops(entry, route));
+
   function selectRoute(id: string) {
+    const route = routes.find(value => value.id === id);
+    // Every click counts, including the route that was preselected. A direct
+    // over-budget route has no stops to remember.
+    if (route && !preview && route.stops.length && !route.overBudget) remember(route);
     if (id === selectedId) return;
     detourVersion.current++; setDetourLoading(false);
     setSelectedId(id); setDetours([]); setPreview(null); setAcceptedDetour(null); setDetourError("");
@@ -209,7 +272,8 @@ export function usePlanner(hasLiveSetup: boolean) {
 
   return {
     hasLiveSetup, preferences, demo, loop, mode, tagCount,
-    setDuration, setShape, toggleMood, surpriseMe, toggleEvents, resetTags, toggleDemo, togglePace,
+    setDuration, setShape, toggleMood, surpriseMe, toggleEvents, toggleFavourites, resetTags, toggleDemo, togglePace,
+    history, favouriteCount, historyFor, reviewRoute, rateHistory, toggleHistoryFavourite, removeHistory, clearHistory,
     start, destination, startText, destinationText, setStartText, setDestinationText, chooseStart, chooseDestination, selectSearchResult,
     effectiveStart, effectiveDestination, searchBias: effectiveStart ?? mapCenter, setMapCenter,
     picking, pickOnMap, cancelPicking: () => setPicking(null), dropPin, locateMe, locating,

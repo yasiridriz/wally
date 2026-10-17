@@ -19,5 +19,6 @@ describe("route labels", () => {
     expect(routeShapeLabel({ loop: true, moods: ["scenic", "green", "historic"], includeEvents: false })).toBe("Loop back · 3 tags");
     expect(routeShapeLabel({ loop: false, destinationLabel: "National Museum", moods: [], includeEvents: false })).toBe("To National Museum · Surprise me");
     expect(routeShapeLabel({ loop: false, moods: [], includeEvents: true })).toBe("Anywhere · Surprise me · Event detours");
+    expect(routeShapeLabel({ loop: true, moods: ["green"], includeEvents: false, favourites: true })).toBe("Loop back · Green & peaceful · Favourites");
   });
 });

@@ -137,7 +137,9 @@ public func chooseCandidate(_ pool: [ScenicCandidate], _ request: GenerateReques
     let distanceFit = 250 * closeness + (estimated > duration ? 20 : 0)
     // Several tags: prefer combinations that visit a stop for each of them.
     let coverage = request.moods.count > 1 ? moodCoverage(candidate.stops, request.moods) * 0.1 : 0
-    return -distanceFit + scorePlaces(candidate.stops, moods: request.moods, visitedIds: request.visitedIds) * 0.12 + candidate.spread * 8 + coverage - overlap * 12
+    // Path memory: repeats cost, favourites (with the tag) and well-rated places gain.
+    let memory = memoryScore(candidate.stops, request) * 0.5
+    return -distanceFit + scorePlaces(candidate.stops, moods: request.moods, visitedIds: request.visitedIds) * 0.12 + candidate.spread * 8 + coverage + memory - overlap * 12
   }
   return pool.filter { !used.contains($0.key) }
     .map { ($0, merit($0)) }

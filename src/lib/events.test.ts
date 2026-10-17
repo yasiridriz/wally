@@ -138,7 +138,7 @@ describe("Edinburgh samples", () => {
 });
 
 describe("generation action boundaries", () => {
-  it.each([null, {}, { ...request, start: { lat: 91, lng: 0 } }, { ...request, start: { lat: 0, lng: Infinity } }, { ...request, duration: 181 }, { ...request, duration: 4 }, { ...request, duration: 52.5 }, { ...request, moods: ["anything"] }, { ...request, moods: "historic" }, { ...request, visitedIds: Array(501).fill("a") }, { ...request, includeEvents: "yes" }])("rejects invalid public input", async (input) => {
+  it.each([null, {}, { ...request, start: { lat: 91, lng: 0 } }, { ...request, start: { lat: 0, lng: Infinity } }, { ...request, duration: 481 }, { ...request, duration: 4 }, { ...request, duration: 52.5 }, { ...request, moods: ["anything"] }, { ...request, moods: "historic" }, { ...request, visitedIds: Array(501).fill("a") }, { ...request, includeEvents: "yes" }])("rejects invalid public input", async (input) => {
     expect(await generateRoutes(input)).toMatchObject({ ok: false, code: "INVALID_INPUT" });
   });
   it("uses the canonical fixed start for sample routes", async () => {

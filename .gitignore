@@ -6,3 +6,5 @@ node_modules/
 coverage/
 .DS_Store
 .gstack/
+# Route reviews collected by the server (see src/lib/reviews.ts).
+.data/

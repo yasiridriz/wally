@@ -10,6 +10,8 @@ export type WalkingResult = {
   warnings?: string[];
 };
 export type RoutingBudget = { remaining: number; rateLimited: boolean };
+/** A pass-through (`via`) waypoint shapes the path without adding a leg or a stop. */
+export type Waypoint = Coordinates & { via?: boolean };
 export class RoutingError extends Error {
   constructor(message: string, public readonly status = 0) { super(message); this.name = "RoutingError"; }
 }
@@ -20,14 +22,16 @@ function parseDuration(value: unknown): number {
   return Number(value.slice(0, -1));
 }
 
-function googleWaypoint(point: Coordinates) {
+function googleWaypoint(point: Waypoint) {
   return { location: { latLng: { latitude: point.lat, longitude: point.lng } } };
 }
 
-export async function routeWalking(waypoints: Coordinates[], budget: RoutingBudget = { remaining: 2, rateLimited: false }): Promise<WalkingResult> {
+export async function routeWalking(waypoints: Waypoint[], budget: RoutingBudget = { remaining: 2, rateLimited: false }): Promise<WalkingResult> {
   const key = process.env.GOOGLE_MAPS_API_KEY;
   if (!key) throw new RoutingError("Live walking routes need a Google Maps API key. Try Demo Mode.");
-  if (waypoints.length < 2 || waypoints.length > 6 || !waypoints.every(isCoordinates)) throw new RoutingError("Invalid walking waypoints.");
+  // Endpoints are never pass-through; one leg per pair of non-via waypoints.
+  const legs = waypoints.filter(point => !point.via).length - 1;
+  if (waypoints.length < 2 || waypoints.length > 8 || legs < 1 || legs > 5 || waypoints[0].via || waypoints[waypoints.length - 1].via || !waypoints.every(isCoordinates)) throw new RoutingError("Invalid walking waypoints.");
   for (let attempt = 0; attempt < 2; attempt++) {
     if (budget.remaining <= 0 || budget.rateLimited) throw new RoutingError("Routing request limit reached. Please try again shortly.");
     budget.remaining--;
@@ -43,7 +47,7 @@ export async function routeWalking(waypoints: Coordinates[], budget: RoutingBudg
           origin: googleWaypoint(waypoints[0]),
           destination: googleWaypoint(waypoints[waypoints.length - 1]),
           // Non-via stops retain one leg per waypoint pair, needed for event arrival times.
-          intermediates: waypoints.slice(1, -1).map((point) => ({ ...googleWaypoint(point), via: false })),
+          intermediates: waypoints.slice(1, -1).map((point) => ({ ...googleWaypoint(point), via: Boolean(point.via) })),
           travelMode: "WALK", computeAlternativeRoutes: false, optimizeWaypointOrder: false,
           polylineEncoding: "GEO_JSON_LINESTRING", polylineQuality: "HIGH_QUALITY",
         }),
@@ -64,7 +68,7 @@ export async function routeWalking(waypoints: Coordinates[], budget: RoutingBudg
       const ends = [geometry.coordinates[0], geometry.coordinates[geometry.coordinates.length - 1]];
       if (ends.some((p: number[], index: number) => distanceMeters({ lng: p[0], lat: p[1] }, index === 0 ? waypoints[0] : waypoints[waypoints.length - 1]) > 200)) throw new RoutingError("The walking network is too far from a selected location.");
       const segmentSeconds = Array.isArray(route.legs) ? route.legs.map((leg: { duration?: unknown }) => parseDuration(leg?.duration)) : [];
-      if (segmentSeconds.length !== waypoints.length - 1 || !segmentSeconds.every((seconds: number) => Number.isFinite(seconds) && seconds >= 0)) throw new RoutingError("The walking provider returned incomplete timing information.");
+      if (segmentSeconds.length !== legs || !segmentSeconds.every((seconds: number) => Number.isFinite(seconds) && seconds >= 0)) throw new RoutingError("The walking provider returned incomplete timing information.");
       const warnings = Array.isArray(route.warnings) ? route.warnings.filter((warning: unknown): warning is string => typeof warning === "string").slice(0, 20).map((warning: string) => warning.slice(0, 2000)) : [];
       return { geometry: { type: "LineString", coordinates: geometry.coordinates.map((p: number[]) => p.slice(0, 2)) }, distanceMeters: route.distanceMeters, durationSeconds, segmentSeconds, warnings };
     } catch (error) {

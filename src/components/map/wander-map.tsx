@@ -3,7 +3,7 @@
 import { useEffect, useRef, useState } from "react";
 import { Compass, Info, Minus, Plus, X } from "lucide-react";
 import type { Coordinates, Event, WanderRoute } from "@/lib/types";
-import { routeColor } from "../route-card";
+import { OVER_BUDGET_COLOR, routeColor } from "../route-card";
 import type { PickTarget } from "../use-planner";
 import { loadGoogleMaps } from "./google-maps-loader";
 import SampleRoutePreview from "./sample-route-preview";
@@ -80,8 +80,10 @@ export default function WanderMap(props: Props) {
     const color = routeColor(Math.max(0, selectedIndex));
     if (selected) {
       const path = selected.geometry.coordinates.map(([lng, lat]) => ({ lat, lng }));
-      // A light outline under the selected line keeps it readable on any base map.
-      lines.push(new google.maps.Polyline({ map: currentMap, path, zIndex: 3, clickable: false, ...lineOptions(selected, SURFACE, selected.source === "demo" ? 8 : 9, .95) }));
+      // A light outline under the selected line keeps it readable on any base map; a red
+      // outline marks a route that takes longer than the chosen time.
+      const outline = selected.overBudget ? OVER_BUDGET_COLOR : SURFACE;
+      lines.push(new google.maps.Polyline({ map: currentMap, path, zIndex: 3, clickable: false, ...lineOptions(selected, outline, selected.overBudget ? 11 : selected.source === "demo" ? 8 : 9, .95) }));
       lines.push(new google.maps.Polyline({ map: currentMap, path, zIndex: 4, clickable: false, ...lineOptions(selected, color, 5, 1) }));
     }
     function addMarker(position: Coordinates, className: string, title: string, content?: string, html = false, style?: Partial<CSSStyleDeclaration>) {

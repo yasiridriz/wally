@@ -90,9 +90,10 @@ public func stopOverlap(_ a: [Place], _ b: [Place]) -> Double {
   return Double(b.filter { ids.contains($0.id) }.count) / Double(min(a.count, b.count))
 }
 
+/// Closest total first; every 10 memory points count like a minute closer.
 public func rankTimeMatchedRoutes(_ routes: [WanderRoute], budget: Int) -> [WanderRoute] {
   let ranked = routes.filter { durationTimeFit($0.totalMinutes, budget) }.sorted { a, b in
-    let da = abs(budget - a.totalMinutes), db = abs(budget - b.totalMinutes)
+    let da = Double(abs(budget - a.totalMinutes)) - a.memoryScore / 10, db = Double(abs(budget - b.totalMinutes)) - b.memoryScore / 10
     if da != db { return da < db }
     if a.score != b.score { return a.score > b.score }
     return a.name.localizedCompare(b.name) == .orderedAscending
@@ -103,6 +104,22 @@ public func rankTimeMatchedRoutes(_ routes: [WanderRoute], budget: Int) -> [Wand
     if selected.count == 3 { break }
   }
   return selected
+}
+
+/// Share of path edges walked more than once, in either direction (0 to 1).
+public func retraceShare(_ geometry: [Coordinates]) -> Double {
+  guard geometry.count > 1 else { return 0 }
+  var edges = Set<String>()
+  var repeated = 0
+  func key(_ p: Coordinates) -> String { "\(fixed(p.lng, 4)),\(fixed(p.lat, 4))" }
+  for index in 1..<geometry.count {
+    let a = key(geometry[index - 1]), b = key(geometry[index])
+    if a == b { continue }
+    let edge = [a, b].sorted().joined(separator: ":")
+    if edges.contains(edge) { repeated += 1 }
+    edges.insert(edge)
+  }
+  return edges.isEmpty ? 0 : Double(repeated) / Double(edges.count + repeated)
 }
 
 /// Reversed edges count as repeated too, penalising out-and-back paths.

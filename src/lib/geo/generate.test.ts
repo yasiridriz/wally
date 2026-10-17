@@ -3,7 +3,8 @@ vi.mock("server-only", () => ({}));
 vi.mock("./places", () => ({ discoverPlaces: vi.fn(), discoverLoopPlaces: vi.fn(), discoverExplorePlaces: vi.fn(), discoverTargetedPlaces: vi.fn() }));
 vi.mock("./routing", () => ({ routeWalking: vi.fn() }));
 import type { GenerateRequest, Place } from "../types";
-import { generateLiveRoutes, shortlistCandidates } from "./generate";
+import { LOOP_RETRACE_LIMIT, generateLiveRoutes, returnViaPoint, shortlistCandidates } from "./generate";
+import { retraceShare } from "./scoring";
 import { discoverExplorePlaces, discoverLoopPlaces, discoverPlaces, discoverTargetedPlaces } from "./places";
 import { routeWalking } from "./routing";
 
@@ -17,6 +18,13 @@ describe("bounded real route generation", () => {
     expect(candidates).toHaveLength(6);
     expect(new Set(candidates.map((stops) => stops.map((p) => p.id).sort().join())).size).toBe(candidates.length);
     expect(candidates.every((stops) => stops.length >= 2 && stops.length <= 3)).toBe(true);
+  });
+  it("steers away from a route the user already opened, and back to it with the Favourites tag", () => {
+    const first = shortlistCandidates(places, request)[0].map(p => p.id);
+    const memory = [{ stopIds: first, favourite: false }];
+    expect(shortlistCandidates(places, { ...request, memory })[0].map(p => p.id)).not.toEqual(first);
+    const favourite = shortlistCandidates(places, request)[3].map(p => p.id);
+    expect(shortlistCandidates(places, { ...request, memory: [{ stopIds: favourite, favourite: true }], favourites: true })[0].map(p => p.id)).toEqual(favourite);
   });
   it("uses real routed durations to reject apparently short candidates", async () => {
     vi.mocked(discoverPlaces).mockResolvedValue(places);
@@ -97,21 +105,27 @@ describe("scenic routes to a destination", () => {
     expect(vi.mocked(routeWalking).mock.calls[0][0]).toEqual([request.start, single, closeDestination]);
     expect(routes[0].totalMinutes).toBe(14);
   });
-  it("rejects excessive actual walking time including stops and safety buffer", async () => {
+  it("shows the direct route, marked over budget, when no walk with stops fits the time", async () => {
     vi.mocked(discoverTargetedPlaces).mockResolvedValue(corridorPlaces);
     mockDestinationWalking(43 * 60);
-    await expect(generateLiveRoutes(destinationRequest)).rejects.toThrow("No Targeted walk close to 45 minutes");
-    expect(routeWalking).toHaveBeenCalledTimes(6);
+    const routes = await generateLiveRoutes(destinationRequest);
+    expect(routes).toHaveLength(1);
+    expect(routes[0]).toMatchObject({ overBudget: true, stops: [], totalMinutes: 48, destination, isLoop: false });
+    // Six planned attempts, then one direct route outside the planner's allowance.
+    expect(routeWalking).toHaveBeenCalledTimes(7);
+    expect(vi.mocked(routeWalking).mock.calls[6][0]).toEqual([destinationRequest.start, destination]);
   });
-  it("rejects an impossible direct-distance lower bound before any API request", async () => {
-    await expect(generateLiveRoutes({ ...destinationRequest, destination: { lat: 55.95, lng: -3 }, duration: 15 })).rejects.toThrow("too far away");
+  it("skips discovery for a destination beyond the direct-distance lower bound and shows the direct route", async () => {
+    mockDestinationWalking(80 * 60);
+    const routes = await generateLiveRoutes({ ...destinationRequest, destination: { lat: 55.95, lng: -3 }, duration: 15 });
+    expect(routes[0]).toMatchObject({ overBudget: true, totalMinutes: 88 });
     expect(discoverTargetedPlaces).not.toHaveBeenCalled();
-    expect(routeWalking).not.toHaveBeenCalled();
+    expect(routeWalking).toHaveBeenCalledTimes(1);
   });
-  it("does not drop the destination or invent a direct walk when there are no scenic stops", async () => {
+  it("keeps the original explanation when the destination is reachable but has no scenic stops", async () => {
     vi.mocked(discoverTargetedPlaces).mockResolvedValue([]);
+    mockDestinationWalking(20 * 60);
     await expect(generateLiveRoutes(destinationRequest)).rejects.toThrow("No interesting mapped stops");
-    expect(routeWalking).not.toHaveBeenCalled();
     await expect(generateLiveRoutes({ ...destinationRequest, destination: undefined })).rejects.toThrow("Choose a destination");
   });
 });
@@ -133,6 +147,36 @@ function walkingLoop(points: { lat: number; lng: number }[], seconds: number) {
     distanceMeters: pathDistance(points) * 1.25, durationSeconds: seconds,
     segmentSeconds: points.slice(1).map(() => seconds / (points.length - 1)), warnings: ["Example provider caution"] };
 }
+
+describe("loops come home a different way", () => {
+  const start = { lat: 55.95, lng: -3.19 };
+  // Out along the street and straight back along the same street.
+  const outAndBack = { type: "LineString" as const, coordinates: [[-3.19, 55.95], [-3.185, 55.95], [-3.18, 55.95], [-3.185, 55.95], [-3.19, 55.95]] };
+  it("measures how much of a path is walked twice", () => {
+    expect(retraceShare(outAndBack)).toBe(.5);
+    expect(retraceShare({ type: "LineString", coordinates: [[-3.19, 55.95], [-3.18, 55.95], [-3.18, 55.96], [-3.19, 55.95]] })).toBe(0);
+  });
+  it("puts the return via point on the side away from the outbound stops", () => {
+    const stops = [{ ...places[0], lat: 55.953, lng: -3.185 }, { ...places[1], lat: 55.95, lng: -3.17 }];
+    const via = returnViaPoint(stops, start)!;
+    expect(via.via).toBe(true);
+    // The first stop is north of the return line, so the way home bends south.
+    expect(via.lat).toBeLessThan(55.95);
+    expect(returnViaPoint([{ ...places[0], lat: 55.9501, lng: -3.19 }], start)).toBeUndefined();
+  });
+  it("routes a loop again through the via point when it would retrace its outbound path", async () => {
+    vi.mocked(discoverLoopPlaces).mockResolvedValue(places);
+    vi.mocked(routeWalking).mockImplementation(async (points) => {
+      const via = points.some(point => (point as { via?: boolean }).via);
+      const coordinates = via ? points.map(point => [point.lng, point.lat]) : [...points.map(point => [point.lng, point.lat]), ...points.slice(0, -1).reverse().map(point => [point.lng, point.lat])];
+      return { geometry: { type: "LineString", coordinates }, distanceMeters: 2500, durationSeconds: 21 * 60, segmentSeconds: points.filter(point => !(point as { via?: boolean }).via).slice(1).map(() => 60) };
+    });
+    const routes = await generateLiveRoutes(request);
+    expect(vi.mocked(routeWalking).mock.calls.some(([points]) => points.some(point => (point as { via?: boolean }).via))).toBe(true);
+    expect(routes.length).toBeGreaterThan(0);
+    expect(routes.every(route => retraceShare(route.geometry) <= LOOP_RETRACE_LIMIT)).toBe(true);
+  });
+});
 
 describe("loops fill the requested time with real walking and visits", () => {
   it("prefers verified 85–90 minute loops instead of returning a 20 minute walk for a 90 minute budget", async () => {
@@ -274,7 +318,10 @@ for (const mode of openModes) {
         const stopCount = points.length - (mode === "destination" ? 2 : 1);
         return walkingLoop(points, (16 - 2 - stopCount * 2) * 60);
       });
-      await expect(generateLiveRoutes(input)).rejects.toThrow(/close to 15 minutes.*ranged from 16 to 16 minutes/);
+      if (mode === "destination") {
+        // A destination that only fits with a 16-minute direct walk is shown, in red, rather than refused.
+        expect(await generateLiveRoutes(input)).toMatchObject([{ overBudget: true, totalMinutes: 16 }]);
+      } else await expect(generateLiveRoutes(input)).rejects.toThrow(/close to 15 minutes.*ranged from 16 to 16 minutes/);
     });
     it("keeps the candidate and HTTP attempt budgets bounded with two concurrent requests", async () => {
       const input = openRequest(mode);

@@ -11,6 +11,9 @@ extension Color {
   static let muted = Color(hex: 0x7c8278)
   static let cream = Color(hex: 0xfbfaf5)
   static let line = Color(hex: 0xe6e8dc)
+  /// A route that takes longer than the chosen time.
+  static let danger = Color(hex: 0xc62828)
+  static let dangerTint = Color(hex: 0xfdecec)
   static let teal = Color(hex: 0x6c8f7d)
   static let copper = Color(hex: 0xbf8050)
   static let googleGrey = Color(hex: 0x5e5e5e)

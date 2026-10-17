@@ -33,8 +33,8 @@ describe("Google Places normalisation", () => {
   });
   it("bounds the incoming collection and rejects invalid search areas", () => {
     const input = Array.from({ length: 40 }, (_, index) => place(String(index), "park", start.lat + index * 0.0005));
-    expect(normalisePlaces(input, start, 3500).length).toBeLessThanOrEqual(20);
-    expect(normalisePlaces(input, start, 3501)).toEqual([]);
+    expect(normalisePlaces(input, start, 50_000).length).toBeLessThanOrEqual(20);
+    expect(normalisePlaces(input, start, 50_001)).toEqual([]);
   });
 });
 
@@ -61,7 +61,7 @@ describe("Google Nearby Search requests", () => {
     await expect(discoverPlaces(start, 1000)).rejects.toThrow("GOOGLE_MAPS_API_KEY");
     expect(fetcher).not.toHaveBeenCalled();
   });
-  it.each([0, 99, 3501, Infinity, NaN])("rejects radius %s before calling Google", async radius => {
+  it.each([0, 99, 50_001, Infinity, NaN])("rejects radius %s before calling Google", async radius => {
     const fetcher = vi.fn(); vi.stubGlobal("fetch", fetcher);
     await expect(discoverPlaces(start, radius)).rejects.toThrow("Invalid discovery area");
     expect(fetcher).not.toHaveBeenCalled();
@@ -105,7 +105,7 @@ describe("loop discovery coverage", () => {
     const bodies = fetcher.mock.calls.map(([, options]) => JSON.parse(options.body));
     for (const body of bodies) {
       expect(body.maxResultCount).toBe(20);
-      expect(body.locationRestriction.circle.radius).toBeLessThanOrEqual(3500);
+      expect(body.locationRestriction.circle.radius).toBeLessThanOrEqual(50_000);
     }
     for (const body of bodies.slice(1, 4)) {
       const center = body.locationRestriction.circle.center;
@@ -211,7 +211,7 @@ describe("Explore and Targeted discovery coverage", () => {
     for (const body of bodies) {
       expect(body.rankPreference).toBe("POPULARITY");
       expect(body.maxResultCount).toBe(20);
-      expect(body.locationRestriction.circle.radius).toBeLessThanOrEqual(3500);
+      expect(body.locationRestriction.circle.radius).toBeLessThanOrEqual(50_000);
     }
     expect(results.filter(result => distanceMeters(start, result) > 2500)).toHaveLength(3);
     expect(bodies[4].includedTypes).toEqual(["observation_deck", "scenic_spot"]);
@@ -294,7 +294,7 @@ describe("Explore and Targeted discovery coverage", () => {
       const circle = JSON.parse(options.body).locationRestriction.circle;
       expect(isCoordinates({ lat: circle.center.latitude, lng: circle.center.longitude })).toBe(true);
       expect(Math.abs(circle.center.longitude)).toBeGreaterThan(170);
-      expect(circle.radius).toBeLessThanOrEqual(3500);
+      expect(circle.radius).toBeLessThanOrEqual(50_000);
     }
   });
 });

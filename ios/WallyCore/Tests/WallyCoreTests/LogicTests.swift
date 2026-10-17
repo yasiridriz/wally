@@ -41,7 +41,7 @@ final class ScoringTests: XCTestCase {
 
   func testRunningCoversGroundFasterAndSearchesFurther() {
     XCTAssertGreaterThan(searchRadius(30, isLoop: true, speed: Pace.run.speed), searchRadius(30, isLoop: true) * 2)
-    XCTAssertEqual(searchRadius(90, isLoop: false, speed: Pace.run.speed), (3500 * Pace.runSpeed).rounded())
+    XCTAssertEqual(searchRadius(90, isLoop: false, speed: Pace.run.speed), (84 * 65 * Pace.runSpeed / 1.5).rounded())
     let walk = demoRouteSamples(GenerateRequest(start: demoStart, duration: .m90, mode: .loop))
     let run = demoRouteSamples(GenerateRequest(start: demoStart, duration: .m90, mode: .loop, pace: .run))
     XCTAssertFalse(run.isEmpty)
@@ -49,6 +49,83 @@ final class ScoringTests: XCTestCase {
       guard let walked = walk.first(where: { $0.id == route.id }) else { continue }
       XCTAssertLessThanOrEqual(route.walkingMinutes, Int((Double(walked.walkingMinutes) / 2).rounded(.up)))
     }
+  }
+
+  func testLoopReturnViaAndRetrace() {
+    let s = Coordinates(lat: 55.95, lng: -3.19)
+    let outAndBack = [s, Coordinates(lat: 55.95, lng: -3.185), Coordinates(lat: 55.95, lng: -3.18), Coordinates(lat: 55.95, lng: -3.185), s]
+    XCTAssertEqual(retraceShare(outAndBack), 0.5)
+    XCTAssertEqual(retraceShare([s, Coordinates(lat: 55.95, lng: -3.18), Coordinates(lat: 55.96, lng: -3.18), s]), 0)
+    let stops = [place("a", lat: 55.953, lng: -3.185), place("b", lat: 55.95, lng: -3.17)]
+    // The first stop is north of the return line, so the way home bends south.
+    XCTAssertLessThan(returnViaPoint(stops, s)!.lat, 55.95)
+    XCTAssertNil(returnViaPoint([place("near", lat: 55.9501, lng: -3.19)], s))
+  }
+
+  func testDurationsAllowAnyMinuteUpToEightHours() {
+    XCTAssertEqual(WalkDuration(rawValue: 135)?.rawValue, 135)
+    XCTAssertEqual(WalkDuration(rawValue: 480)?.rawValue, 480)
+    XCTAssertNil(WalkDuration(rawValue: 481))
+    XCTAssertNil(WalkDuration(rawValue: 4))
+    XCTAssertEqual(WalkDuration(clamping: 999).rawValue, 480)
+    XCTAssertGreaterThan(searchRadius(180, isLoop: false), 7000)
+    XCTAssertEqual(searchRadius(480, isLoop: false, speed: 5), maxSearchRadius)
+    let saved = Preferences(duration: WalkDuration(clamping: 200)).persistable()
+    XCTAssertEqual(Preferences.restore(saved, hasLiveSetup: true).duration.rawValue, 200)
+  }
+
+  func testPathMemoryAvoidsRepeatsAndPrefersFavourites() {
+    let a = place("a"), b = place("b"), c = place("c"), d = place("d")
+    var request = GenerateRequest(start: start, duration: .m30, mode: .loop)
+    XCTAssertEqual(memoryScore([a, b], request), 0)
+    request.memory = [MemoryHint(stopIds: ["a", "b"])]
+    XCTAssertEqual(memoryScore([a, b], request), -30)
+    XCTAssertLessThan(memoryScore([a, b], request), memoryScore([a, c], request))
+    XCTAssertEqual(memoryScore([c, d], request), 0)
+    request.memory = [MemoryHint(stopIds: ["a", "b"], favourite: true)]
+    XCTAssertEqual(memoryScore([a, b], request), -30)
+    request.favourites = true
+    XCTAssertEqual(memoryScore([a, b], request), 85)
+    request = GenerateRequest(start: start, duration: .m30, mode: .loop)
+    request.memory = [MemoryHint(stopIds: ["a", "b"], rating: 5)]
+    let loved = memoryScore([a, c, d], request)
+    request.memory = [MemoryHint(stopIds: ["a", "b"], rating: 1)]
+    XCTAssertGreaterThan(loved, memoryScore([a, c, d], request))
+  }
+
+  func testFavouritePlacesJoinDiscoveryAndRankingUsesMemory() {
+    var request = GenerateRequest(start: start, duration: .m30, mode: .loop)
+    request.favourites = true
+    request.favouritePlaces = [place("fav"), place("b")]
+    XCTAssertEqual(withFavouritePlaces([place("x"), place("b")], request) { _ in true }.map(\.id), ["fav", "b", "x"])
+    request.favourites = false
+    XCTAssertEqual(withFavouritePlaces([place("x")], request) { _ in true }.map(\.id), ["x"])
+    var favourite = demoRouteSamples(GenerateRequest(start: demoStart, duration: .m90, mode: .loop))[0]
+    var fresh = favourite
+    favourite.id = "fav"; favourite.totalMinutes = 84; favourite.memoryScore = 60
+    fresh.id = "new"; fresh.totalMinutes = 88; fresh.stops = [place("n1"), place("n2")]
+    XCTAssertEqual(rankTimeMatchedRoutes([fresh, favourite], budget: 90).map(\.id), ["fav", "new"])
+  }
+
+  func testReviewsKeepNewestAndAverageByPlace() {
+    let route = demoRouteSamples(GenerateRequest(start: demoStart, duration: .m90, mode: .loop))[0]
+    var entry = HistoryEntry(id: "r1", route: route, mode: .loop, pace: .walk, moods: [], duration: 90, rating: 2)
+    XCTAssertNil(ReviewRecord(entry), "Demo routes are never stored")
+    entry.source = .live
+    let older = ReviewRecord(entry, at: Date(timeIntervalSince1970: 0))!
+    entry.rating = 5
+    let newer = ReviewRecord(entry, at: Date(timeIntervalSince1970: 100))!
+    let encoder = JSONEncoder()
+    let lines = [older, newer].map { String(data: try! encoder.encode($0), encoding: .utf8)! }.joined(separator: "\n") + "\n{broken"
+    let latest = latestReviews(lines)
+    XCTAssertEqual(latest.map(\.rating), [5])
+    XCTAssertEqual(placeRatings(latest)[route.stops[0].id], PlaceRating(average: 5, count: 1))
+    // A favourite without stars is stored with an explicit null rating, like the web store.
+    var favouriteOnly = HistoryEntry(id: "r2", route: route, mode: .loop, pace: .walk, moods: [], duration: 90, favourite: true)
+    favouriteOnly.source = .live
+    let json = String(data: try! encoder.encode(ReviewRecord(favouriteOnly)!), encoding: .utf8)!
+    XCTAssertTrue(json.contains("\"rating\":null"))
+    XCTAssertTrue(json.contains("\"v\":1"))
   }
 
   func testMultipleMoodsFavourCoverageAndKeepMinorityTags() {
@@ -172,6 +249,7 @@ final class DemoAndEventTests: XCTestCase {
     XCTAssertEqual(Preferences.restore(saved, hasLiveSetup: true).moods, [.scenic, .historic])
     XCTAssertEqual(Preferences.restore(Preferences(pace: .run).persistable(), hasLiveSetup: true).pace, .run)
     XCTAssertEqual(Preferences.restore(saved, hasLiveSetup: true).pace, .walk)
+    XCTAssertTrue(Preferences.restore(Preferences(favourites: true).persistable(), hasLiveSetup: true).favourites)
     let v2 = try! JSONSerialization.data(withJSONObject: ["version": 2, "duration": 30, "mood": "surprise", "mode": "explore"])
     XCTAssertEqual(Preferences.restore(v2, hasLiveSetup: true).moods, [])
     let bad = try! JSONSerialization.data(withJSONObject: ["version": 3, "duration": 30, "moods": ["nope"], "mode": "loop"])

@@ -18,11 +18,28 @@ export function distanceMeters(a: Coordinates, b: Coordinates): number {
   return 6_371_000 * 2 * Math.atan2(Math.sqrt(h), Math.sqrt(Math.max(0, 1 - h)));
 }
 
-/** `speed` scales the ground covered per minute, e.g. 2.25 when running. */
+/** The largest search circle Google Places (New) accepts. */
+export const MAX_SEARCH_RADIUS = 50_000;
+
+/**
+ * How far discovery looks: it grows with the time so long walks find stops far
+ * enough out. `speed` scales the ground covered per minute, e.g. 2.25 when running.
+ */
 export function searchRadius(duration: number, isLoop: boolean, speed = 1): number {
-  return Math.round(Math.min(3500 * speed, Math.max(350, (duration - 6) * 65 * speed / (isLoop ? 2.4 : 1.5))));
+  return Math.round(Math.min(MAX_SEARCH_RADIUS, Math.max(350, (duration - 6) * 65 * speed / (isLoop ? 2.4 : 1.5))));
 }
 
 export function pathDistance(points: Coordinates[]): number {
   return points.slice(1).reduce((sum, point, index) => sum + distanceMeters(points[index], point), 0);
+}
+
+/** The point `meters` away from `origin` along a compass bearing. */
+export function offset(origin: Coordinates, meters: number, degrees: number): Coordinates {
+  const radians = Math.PI / 180;
+  const bearing = degrees * radians;
+  const angular = meters / 6371000;
+  const latitude = origin.lat * radians;
+  const nextLatitude = Math.asin(Math.sin(latitude) * Math.cos(angular) + Math.cos(latitude) * Math.sin(angular) * Math.cos(bearing));
+  const nextLongitude = origin.lng * radians + Math.atan2(Math.sin(bearing) * Math.sin(angular) * Math.cos(latitude), Math.cos(angular) - Math.sin(latitude) * Math.sin(nextLatitude));
+  return { lat: Math.max(-85, Math.min(85, nextLatitude / radians)), lng: ((nextLongitude / radians + 540) % 360) - 180 };
 }
